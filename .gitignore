@@ -1,0 +1,19 @@
+.DS_Store
+Thumbs.db
+node_modules/
+coverage/
+test-results/
+playwright-report/
+artifacts/
+.artifacts/
+*.log
+.env
+.env.local
+
+# Local course references, instructor notes, and unused source artwork.
+/material/
+/quizzes/
+/syllabus/
+/art/
+/docs/course-material-map.md
+/docs/quiz-1-2-alignment.md
