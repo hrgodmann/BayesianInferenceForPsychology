@@ -62,7 +62,7 @@ try {
     await click('next');
   }
   assert.equal(await page.locator('.roundup-item').count(), 5);
-  assert.match(await page.locator('h1').innerText(), /wiser/);
+  assert.equal(await page.locator('h1').innerText(), 'Practice complete');
   await page.screenshot({ path: '.artifacts/roundup.png', fullPage: true });
   await click('review-session');
   assert.equal(await page.locator('.question-count').innerText(), 'Question 1 / 3');

@@ -44,8 +44,6 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
 }
 .site-header nav { color: #6c5438; font-size: .88rem; gap: 34px; flex-wrap: wrap; }
 .site-header nav a[aria-current]::after { height: 1px; background: #8d3d28; }
-.nav-about { border-color: #cdb590; border-radius: 4px; background: #fffbf23d; }
-.nav-about:hover { background: #edddbf; }
 
 /* The source artwork stays intact. Text sits in its open parchment sky. */
 .hero {
@@ -53,7 +51,7 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
   isolation: isolate;
   display: block;
   width: 100%;
-  min-height: clamp(710px, 56.25vw, 1000px);
+  min-height: clamp(280px, 26vw, 370px);
   padding: 0;
   overflow: hidden;
   background: #f9eccc;
@@ -62,98 +60,61 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
 .hero-copy {
   position: relative;
   z-index: 1;
-  width: 49%;
+  width: 43%;
   max-width: 700px;
-  margin-left: 43%;
-  padding: clamp(48px, 5.2vw, 96px) 0 310px;
+  margin-left: 53%;
+  padding: clamp(55px, 6vw, 95px) 0 45px;
 }
-.hero-copy .eyebrow { font-size: .67rem; letter-spacing: .19em; color: #7c5e3b; }
-.tiny-line { width: 27px; height: 1px; background: #9d663a; }
 .hero h1 {
-  font-size: clamp(3.1rem, 4.6vw, 5.4rem);
+  font-size: clamp(2.8rem, 5vw, 4.5rem);
   line-height: 1.04;
   font-weight: 500;
   letter-spacing: -.055em;
-  margin: 25px 0 20px;
+  margin: 0 0 14px;
   color: #3e3020;
   text-wrap: balance;
 }
-.hero h1 span { color: #98482d; font-style: italic; }
-.hero-lede { font-size: 1rem; line-height: 1.75; max-width: 450px; color: #65513b; margin-bottom: 25px; }
-.hero-actions { gap: 12px; }
-.hero-actions .button { padding: 13px 20px; font-size: .86rem; }
-.hero-actions .button.secondary { background: #fff5dfb8; border-color: #bda076; }
-.hero-note { color: #705c40; font-size: .75rem; margin-top: 21px; gap: 8px; }
-.hero-note .icon { color: #9b4a2e; }
-.hero-art { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; margin: 0; max-width: none; }
-.hero-art img { display: block; width: 100%; height: 100%; margin: 0; object-fit: cover; object-position: center bottom; mix-blend-mode: normal; }
-.hero-art figcaption {
-  position: absolute;
-  right: 5.5%;
-  bottom: 23px;
-  margin: 0;
-  padding: 9px 15px;
-  border: 1px solid #d5ba846e;
-  background: #fff3d9d9;
-  color: #674a2f;
-  font: italic .88rem var(--serif);
-  border-radius: 3px;
-  box-shadow: 0 3px 10px #56331a0b;
-}
-.hero-art figcaption .icon { width: 17px; height: 17px; color: #934728; }
+.hero-lede { font-size: 1rem; line-height: 1.6; color: #65513b; margin: 0; }
+.hero-art { position: absolute; inset: 0; z-index: 0; width: 65%; height: 100%; margin: 0; max-width: none; }
+.hero-art img { display: block; width: 100%; height: 100%; margin: 0; object-fit: cover; object-position: center bottom; mix-blend-mode: normal; mask-image: linear-gradient(to right, #000 0, #000 72%, transparent 100%); }
 .home-content { position: relative; }
-.village-strip { border-top: 0; border-bottom: 1px solid #cdbb9b; padding: 24px 0; font-size: .82rem; }
-.village-strip>span { padding: 0 36px; }
-.village-strip strong { font-family: var(--serif); font-size: 1.1rem; font-weight: 600; }
-.village-strip .icon { color: #8d3d28; }
 .resume-banner { margin: 29px 0 0; border-radius: 5px; background: #eee3cbee; border-color: #d2b88b; }
-.icon-disc { background: #e2ceaa; color: #8d3d28; border: 1px solid #cab080; }
 
-.chapter-section { padding: 64px 0 43px; }
-.section-heading { margin-bottom: 32px; align-items: flex-end; }
-.section-heading h2 { font-size: 2.8rem; line-height: 1.15; margin-bottom: 12px; letter-spacing: -.045em; }
-.section-heading .eyebrow { font-size: .67rem; letter-spacing: .18em; margin-bottom: 12px; }
-.section-heading p:last-child { font-size: .91rem; }
+.chapter-section { padding: 40px 0 48px; }
+.section-heading { display: flex; flex-wrap: wrap; margin-bottom: 25px; align-items: center; }
+.section-heading h2 { font-size: 2.2rem; line-height: 1.15; margin: 0; letter-spacing: -.035em; }
 .segmented { background: #ece0c9; border-color: #d3bc98; border-radius: 5px; padding: 4px; }
 .segmented button { border-radius: 3px; padding: 10px 14px; font-size: .78rem; color: #715c41; }
 .segmented button[aria-pressed=true] { background: #fff9ec; color: #813d27; box-shadow: 0 1px 4px #603b1b15; }
-.chapter-grid { gap: 22px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); }
+.chapter-grid { gap: 22px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); }
 .chapter-card {
   position: relative;
   background: #fffbf2de;
   background-image: url('./assets/paper-grain.svg');
   border: 1px solid #d1bd98;
   border-radius: 4px 14px 4px 4px;
-  padding: 27px 25px 22px;
+  padding: 23px 25px;
+  min-height: 172px;
   box-shadow: 3px 4px 0 #e8d8bda6, 0 6px 15px #603b1b05;
 }
 .chapter-card::before { content: ''; position: absolute; left: 6px; top: 6px; bottom: 6px; width: 1px; background: #d5bf965c; }
 .chapter-card::after { content: ''; position: absolute; right: 7px; top: 7px; width: 13px; height: 13px; border-top: 1px solid #b99c6e70; border-right: 1px solid #b99c6e70; border-radius: 0 7px 0 0; }
 .chapter-card:hover { transform: translateY(-3px); border-color: #a67541; box-shadow: 3px 6px 0 #e6d2b3, 0 12px 24px #603b1b0e; }
-.card-top { margin-bottom: 24px; gap: 12px; }
-.chapter-icon { width: 44px; height: 44px; border-radius: 50%; border: 1px solid #d6bf95; background: #f1e3c7; color: #865b2f; }
+.card-top { margin-bottom: 17px; gap: 12px; }
 .chapter-icon.tone-2 { border-color: #d7b596; color: #91472c; background: #f4e0c8; }
-.chapter-icon .icon { stroke-width: 1.5; }
 .chapter-number { font-size: .65rem; color: #7f6240; letter-spacing: .15em; }
 .card-chevron { color: #9b7951; }
-.chapter-card h3 { font-size: 1.55rem; font-weight: 600; letter-spacing: -.035em; margin-bottom: 12px; }
-.chapter-card>p { font-size: .85rem; line-height: 1.7; color: #74624b; margin-bottom: 24px; }
-.card-bottom { font-size: .7rem; flex-wrap: wrap; white-space: normal; }
-.week-badge { background: #f1e5cd; color: #745a36; border-radius: 3px; padding: 4px 7px; }
+.chapter-card h3 { font-size: 1.45rem; font-weight: 600; letter-spacing: -.035em; margin-bottom: 18px; flex: 1; }
+.card-bottom { display: block; font-size: .76rem; white-space: normal; color: var(--muted); }
 .card-progress { border-top: 1px dashed #d8c7aa; font-size: .7rem; padding-top: 15px; }
 .mini-track { background: #e9ddc4; border-radius: 2px; }
 .mini-track>span { background: #a67742; border-radius: 2px; }
-.chapter-footnote { margin-top: 30px; }
-.gentle-band { display: flex; flex-wrap: wrap; border-radius: 4px; border: 1px solid #cfba95; background: #eddfc588; background-image: url('./assets/paper-grain.svg'); padding: 36px; margin: 5px 0 64px; }
-.gentle-band>div { flex: 1 1 17rem; min-width: 0; }
-.gentle-band>.text-button { white-space: normal; }
-.gentle-band h2 { font-size: 1.55rem; font-weight: 600; margin-bottom: 10px; }
-.gentle-band p { font-size: .85rem; }
-.band-mark { max-width: 100%; white-space: normal; border: 1px solid #bda075; border-radius: 3px; color: #84582f; background: #fff6e688; padding: 22px 15px; font-size: .86rem; box-shadow: 2px 2px 0 #d5bb9133; }
-.site-footer { background: #eddfc680; border-top-color: #ccb58c; padding: 34px 0; }
-.footer-brand { font-family: var(--serif); font-weight: 600; font-size: 1.4rem; }
-.footer-brand span { font-family: 'Avenir Next', 'Segoe UI', Arial, sans-serif; font-size: .72rem; color: #74634e; }
+.site-footer { background: #eddfc680; border-top-color: #ccb58c; padding: 20px 0; }
 .footer-inner>p { color: #69563e; }
+.footer-inner>.text-button { display: inline-flex; }
+.footer-inner { flex-wrap: nowrap; }
+.next-row { justify-content: flex-end; }
+dialog h2 { margin-bottom: 25px; padding-right: 10px; }
 
 /* Practice feels like a quiet page in a workbook. */
 .practice-wrap { max-width: 850px; margin-top: 36px; }
@@ -181,8 +142,6 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
 thead th { background: #efe1c6; color: #665039; }
 tbody tr:nth-child(even) { background: #faf1df; }
 tbody tr+tr { border-color: #dfcfb1; }
-.practice-reassurance { font-family: var(--serif); font-size: .92rem; font-style: italic; color: #7b6342; }
-.practice-reassurance .icon { color: #a05c31; }
 .result-card { border-color: #bcc09a; border-radius: 5px; background: #f2f0def5; padding: 32px 38px; box-shadow: 3px 4px 0 #e1d6b666; }
 .result-card.incorrect { border-color: #d1ad80; background: #f9eddb; }
 .result-card.revealed { background: #f5eddb; border-color: #ceba93; }
@@ -196,7 +155,6 @@ tbody tr+tr { border-color: #dfcfb1; }
 .worked-solution { border-color: #d0c09d; background: #fffcf1a6; border-radius: 4px; }
 .self-mark { border-color: #d5c4a1; }
 .self-mark .selected-mark { background: #ead5b0; border-color: #b99a63; color: #724727; }
-.next-row>span { font-family: var(--serif); font-style: italic; font-size: .88rem; }
 
 /* Dialogs, progress, and round-ups share the same paper and ink. */
 dialog { background: #fff8e9; background-image: url('./assets/paper-grain.svg'); border: 1px solid #bca17a; border-radius: 6px; box-shadow: 0 25px 100px #3f271d40, inset 0 0 0 6px #f2e6ce; }
@@ -209,8 +167,7 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
 .mode-option strong { font-weight: 600; }
 .setup-row { grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); }
 .setup-row select { background: #fffcf4; border-color: #c6af88; border-radius: 4px; }
-.summary-wrap h1, .progress-intro h1 { font-size: 3.8rem; letter-spacing: -.045em; line-height: 1.05; }
-.summary-celebration { color: #9b4a2b; background: #eed9b3; border: 1px solid #c3a26f; border-radius: 48% 52% 45% 55%; }
+.summary-wrap h1, .progress-intro h1 { font-size: 2.7rem; letter-spacing: -.035em; line-height: 1.1; margin-bottom: 28px; }
 .summary-stats, .progress-stats { background: #fff8e9b5; border-color: #cdb48e; border-radius: 4px; }
 .summary-stats strong, .progress-stats strong { color: #8a4a2b; font-family: var(--serif); font-size: 2.6rem; font-weight: 500; }
 .summary-stats strong small { color: #8a7355; }
@@ -219,7 +176,6 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
 .roundup-status.good { color: var(--olive); background: #e3e3c5; }
 .roundup-status:not(.good) { background: #eed9b9; color: #914b2b; }
 .progress-intro { max-width: 630px; }
-.progress-intro>p:last-child { max-width: 485px; }
 .empty-state { border-radius: 4px; border: 1px dashed #c9ae80; background: #f1e3c977; }
 .empty-state h2 { font-size: 1.65rem; }
 .chapter-log-row h3 { font-size: 1.25rem; font-weight: 600; }
@@ -230,43 +186,35 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
 .skip-link { background: #813b25; }
 
 @media (min-width: 1700px) {
-  .hero-copy { margin-left: 44%; padding-top: 90px; }
+  .hero-copy { margin-left: 53%; padding-top: 95px; }
 }
 
 @media (max-width: 1100px) {
-  .hero { min-height: 720px; }
-  .hero-copy { margin-left: 40%; width: 55%; padding-top: 48px; padding-bottom: 300px; }
+  .hero { min-height: 300px; }
+  .hero-copy { margin-left: 53%; width: 43%; padding-top: 65px; padding-bottom: 45px; }
   .hero h1 { font-size: 3.35rem; }
-  .hero-copy .eyebrow { font-size: .6rem; letter-spacing: .14em; }
   .hero-lede { max-width: 390px; font-size: .95rem; }
   .hero-art img { object-position: 35% bottom; }
   .chapter-card { padding: 24px 20px; }
   .chapter-card h3 { font-size: 1.4rem; }
-  .village-strip>span { padding: 0 24px; }
 }
 
 @media (max-width: 780px) {
   .nav-inner { min-height: 76px; }
   .brand { font-size: 1.75rem; }
   .site-header nav { gap: 20px; font-size: .8rem; }
-  .hero { min-height: 700px; }
-  .hero-copy { width: 54%; margin-left: 42%; padding: 43px 23px 300px 0; }
-  .hero-copy .eyebrow { display: block; font-size: .58rem; line-height: 1.7; }
-  .tiny-line { display: none; }
+  .hero { min-height: 280px; }
+  .hero-copy { width: 46%; margin-left: 51%; padding: 57px 12px 30px 0; }
   .hero h1 { font-size: 3rem; }
-  .hero-lede { font-size: .92rem; max-width: 380px; }
-  .hero-actions .button { font-size: .78rem; padding: 12px 15px; }
-  .hero-note { font-size: .7rem; }
-  .hero-art img { object-position: 65% bottom; }
-  .hero-art figcaption { font-size: .8rem; right: 24px; bottom: 18px; }
-  .village-strip>span { padding: 0 14px; font-size: .72rem; }
-  .section-heading { display: block; }
-  .section-heading h2 { font-size: 2.5rem; }
-  .chapter-section { padding-top: 48px; }
+  .hero-lede { font-size: .85rem; max-width: 270px; }
+  .hero-art img { object-position: center bottom; }
+  .section-heading { display: flex; }
+  .section-heading h2 { font-size: 2.1rem; }
+  .chapter-section { padding-top: 32px; }
+  .week-filter { margin-top: 0; }
   .chapter-grid { gap: 20px; }
   .chapter-card { padding: 26px 22px; }
-  .card-bottom { font-size: .66rem; }
-  .gentle-band { padding: 29px; }
+  .card-bottom { font-size: .74rem; }
   .question-card { padding: 30px; }
   .result-card { padding: 29px; }
   .result-heading h2 { font-size: 1.55rem; }
@@ -277,43 +225,24 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
   .brand { font-size: 1.55rem; gap: 8px; }
   .brand-mark { width: 30px; height: 30px; font-size: 1.55rem; border-width: 2px; padding-bottom: 3px; }
   .site-header nav { font-size: .71rem; gap: 16px; }
-  .hero { min-height: 710px; background: #f9edcf; }
-  .hero-copy { width: 100%; margin-left: 0; max-width: none; padding: 37px 24px 345px; text-align: center; }
-  .hero-copy .eyebrow { font-size: .55rem; letter-spacing: .12em; margin: 0; }
-  .hero h1 { font-size: 2.85rem; line-height: 1.07; margin: 20px 0 17px; letter-spacing: -.06em; }
-  .hero-lede { font-size: .9rem; line-height: 1.75; margin: 0 auto 22px; max-width: 340px; }
-  .hero-actions { justify-content: center; gap: 9px; }
-  .hero-actions .button { font-size: .78rem; padding: 12px 14px; }
-  .hero-note { justify-content: center; font-size: .65rem; gap: 6px; margin-top: 18px; line-height: 1.6; }
-  .hero-note .icon { width: 15px; height: 15px; }
-  .hero-art { top: auto; bottom: 0; height: 365px; width: 100%; }
-  .hero-art img { width: 100%; height: 100%; object-fit: cover; object-position: 40% bottom; mask-image: linear-gradient(to bottom, transparent 0, #000 18%); }
-  .hero-art figcaption { right: 16px; bottom: 15px; font-size: .75rem; padding: 8px 11px; }
-  .hero-art figcaption .icon { width: 14px; height: 14px; }
-  .village-strip { padding: 20px 0; }
-  .village-strip>span { padding: 0 10px; font-size: .7rem; }
-  .village-strip strong { font-size: 1rem; }
+  .hero { min-height: 260px; background: #f9edcf; }
+  .hero-copy { width: 60%; margin-left: 38%; max-width: none; padding: 25px 8px 0; text-align: center; }
+  .hero h1 { font-size: 2.4rem; line-height: 1.07; margin: 0 0 10px; letter-spacing: -.05em; }
+  .hero-lede { font-size: .75rem; line-height: 1.5; margin: 0 auto; max-width: 190px; }
+  .hero-art { inset: 0; height: 100%; width: 100%; }
+  .hero-art img { width: 100%; height: 100%; object-fit: cover; object-position: 60% bottom; mask-image: none; }
   .resume-banner { margin-top: 23px; }
-  .resume-banner>.button { margin-left: 54px; }
-  .chapter-section { padding: 36px 0 33px; }
-  .section-heading { margin-bottom: 27px; }
-  .section-heading .eyebrow { font-size: .57rem; letter-spacing: .15em; }
-  .section-heading h2 { font-size: 2.35rem; }
-  .section-heading p:last-child { font-size: .86rem; }
-  .week-filter { margin-top: 23px; }
+  .resume-banner>.button { margin-left: 0; }
+  .chapter-section { padding: 29px 0 33px; }
+  .section-heading { margin-bottom: 23px; gap: 18px; }
+  .section-heading h2 { font-size: 2rem; }
+  .week-filter { margin-top: 0; }
   .chapter-grid { gap: 18px; }
-  .chapter-card { padding: 25px 24px 21px; }
-  .card-top { margin-bottom: 21px; }
+  .chapter-card { padding: 22px 24px; min-height: 160px; }
+  .card-top { margin-bottom: 16px; }
   .chapter-number { font-size: .63rem; }
-  .chapter-card h3 { font-size: 1.6rem; }
-  .chapter-card>p { font-size: .88rem; }
-  .card-bottom { font-size: .71rem; }
-  .gentle-band { padding: 25px; gap: 21px; margin-bottom: 40px; }
-  .gentle-band h2 { font-size: 1.6rem; line-height: 1.2; }
-  .gentle-band p { font-size: .85rem; }
-  .band-mark { padding: 15px 13px; font-size: .81rem; }
-  .footer-brand { font-size: 1.25rem; }
-  .footer-brand span { font-size: .65rem; }
+  .chapter-card h3 { font-size: 1.45rem; }
+  .card-bottom { font-size: .75rem; }
   .practice-wrap { margin-top: 23px; }
   .session-heading h1 { font-size: 2.2rem; margin-bottom: 20px; }
   .session-heading .eyebrow { font-size: .57rem; }
@@ -325,18 +254,16 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
   .tag { font-size: .57rem; padding: 6px 8px; }
   .answer-choice { font-size: .96rem; }
   .hint-panel { padding: 16px; }
-  .practice-reassurance { font-size: .81rem; }
   .result-card { padding: 25px 21px; }
   .result-heading h2 { font-size: 1.45rem; line-height: 1.15; }
   .correct-answer>strong { font-size: 1.65rem; }
   .explanation { font-size: .91rem; line-height: 1.8; }
-  .next-row>span { font-size: .84rem; }
   dialog { padding: 33px 22px 26px; }
   dialog h2 { font-size: 1.95rem; line-height: 1.13; }
   .mode-option>span { min-height: 121px; height: auto; padding: 12px 4px; text-align: center; }
   .mode-option strong { font-size: .72rem; }
   .mode-option small { font-size: .62rem; line-height: 1.5; }
-  .summary-wrap h1, .progress-intro h1 { font-size: 3.15rem; }
+  .summary-wrap h1, .progress-intro h1 { font-size: 2.35rem; }
   .summary-stats strong, .progress-stats strong { font-size: 2.2rem; }
   .roundup h2, .chapter-log h2, .recent-section h2 { font-size: 1.5rem; }
   .chapter-log-row h3 { font-size: 1.17rem; }
@@ -348,14 +275,10 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
   .brand { font-size: 1.42rem; gap: 6px; }
   .brand-mark { width: 26px; height: 26px; font-size: 1.35rem; }
   .site-header nav { gap: 11px; font-size: .64rem; }
-  .hero-copy { padding-left: 17px; padding-right: 17px; }
-  .hero h1 { font-size: 2.53rem; }
-  .hero-actions .button { font-size: .73rem; padding: 11px 10px; gap: 7px; }
-  .hero-actions .icon { width: 17px; height: 17px; }
-  .hero-copy .eyebrow { font-size: .51rem; }
-  .hero-note { font-size: .59rem; }
-  .village-strip>span { font-size: .64rem; }
-  .card-bottom { font-size: .67rem; }
+  .hero { min-height: 230px; }
+  .hero-copy { padding-left: 6px; padding-right: 6px; }
+  .hero h1 { font-size: 2.1rem; }
+  .card-bottom { font-size: .72rem; }
   .chapter-card { padding: 23px 20px; }
   .mode-option strong { font-size: .68rem; }
   .mode-option small { font-size: .58rem; }
