@@ -37,6 +37,8 @@ The browser loads the question bank from `site/questions.js`. Keep question IDs 
 
 The site uses plain HTML, CSS, and JavaScript modules. Keep asset links relative so they work beneath the repository path on GitHub Pages. Publishable assets belong inside `site/`.
 
+The visual theme follows the supplied autumn watercolor reference, used directly as `site/assets/autumn-village.png`. `site/styles.css` contains the core layouts and color tokens; `site/autumn.css` adds the parchment surfaces, serif typography, and responsive artwork placement. Fonts are supplied by the device, with no external font requests.
+
 ## Student progress
 
 Progress is saved in browser storage on the current device. There are no accounts, backend, class roster, or instructor dashboard. Progress does not synchronise across browsers or devices, and clearing browser data removes it. Answers are included in the public question bank because this is a practice tool, not a secure exam platform.

@@ -63,7 +63,7 @@ function counts(list) { return { tf: list.filter(q => q.type === 'tf').length, c
 function renderHome() {
   const stats = summarize(progress, ids);
   const subset = chapters.filter(ch => week === 'all' || String(ch.week) === week);
-  return `<div class="home wrap">
+  return `<div class="home">
     <section class="hero" aria-labelledby="welcome-title">
       <div class="hero-copy"><p class="eyebrow"><span class="tiny-line"></span>BAYESIAN INFERENCE FOR PSYCHOLOGY</p>
         <h1 id="welcome-title">A little practice.<br>A clearer <span>picture.</span></h1>
@@ -71,8 +71,9 @@ function renderHome() {
         <div class="hero-actions"><a class="button primary" href="#chapters">Find your chapter ${icon('book')}</a><button class="button secondary" data-action="surprise">Surprise me ${icon('spark')}</button></div>
         <p class="hero-note">${icon('leaf')} No timer. No pressure. Room to figure it out.</p>
       </div>
-      <figure class="hero-art"><img src="./assets/village.jpg" width="1536" height="1024" alt="A small green village with a library, cosy houses, trees, and winding paths."><figcaption><span class="caption-dot"></span> A good place to change your mind.</figcaption></figure>
+      <figure class="hero-art"><img src="./assets/autumn-village.png" width="1672" height="941" fetchpriority="high" alt="An autumn village painted in watercolor: russet leaves, ochre hills, winding paths, and a stone bridge beside a quiet lake."><figcaption>${icon('leaf')} A good place to change your mind.</figcaption></figure>
     </section>
+    <div class="home-content wrap">
     ${session && !session.complete ? `<aside class="resume-banner"><span class="icon-disc">${icon('book')}</span><div><strong>Your place is saved.</strong><span>${esc(chapterTitle(session.chapterId))} · question ${session.index + 1} of ${session.ids.length}</span></div><button class="button small primary" data-action="resume">Keep going</button></aside>` : ''}
     <div class="village-strip"><span><strong>${questions.length}</strong> questions to explore</span><span><strong>${chapters.length}</strong> little chapters</span><span>${stats.practiced ? `<strong>${stats.practiced}</strong> questions explored` : `${icon('check')} Hints & explanations included`}</span></div>
     <section class="chapter-section" id="chapters" aria-labelledby="chapters-title">
@@ -86,6 +87,7 @@ function renderHome() {
       <p class="chapter-footnote">${icon('info')} Start with weeks 1 & 2. More neighbourhoods will grow here as the course unfolds.</p>
     </section>
     <section class="gentle-band"><span class="band-mark">P(learning | practice)</span><div><h2>Getting it wrong is part of getting it.</h2><p>Take a hint, work it out on paper, or peek at the explanation. Every answer is a chance to update.</p></div><button class="text-button" data-action="about">How Bayesville works ${icon('arrow')}</button></section>
+    </div>
   </div>`;
 }
 
