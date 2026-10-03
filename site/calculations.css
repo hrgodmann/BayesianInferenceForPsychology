@@ -18,7 +18,7 @@
 .guided-step label { display: flex; align-items: flex-start; gap: 10px; font-size: .88rem; line-height: 1.65; margin-bottom: 12px; }
 .step-number { border: 1px solid #c8b693; color: #775a36; border-radius: 50%; font-size: .72rem; width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
 .step-entry { display: flex; gap: 10px; align-items: center; }
-.step-entry input { min-width: 0; width: 100%; flex: 1; padding: 10px 14px; height: 44px; border: 1px solid #bea17b; border-radius: 4px; color: var(--ink); background: #fffdf7; font-variant-numeric: tabular-nums; }
+.step-entry input { min-width: 0; width: 100%; flex: 1; padding: 10px 14px; height: 44px; border: 1px solid #9f7d52; border-radius: 4px; color: var(--ink); background: #fffdf7; font-variant-numeric: tabular-nums; }
 .step-entry input:disabled { color: #6a573d; background: #f4ebd9; }
 .step-entry .button { flex: none; }
 .step-feedback { color: #94412c; font-size: .8rem; margin: 7px 0 0; }

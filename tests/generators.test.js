@@ -16,7 +16,7 @@ function inspect(question) {
   assert.ok([2, 4, 6, 8].includes(question.decimals));
   assert.equal(question.hints.length, 2);
   assert.ok(question.hints.every(hint => typeof hint === 'string' && hint.length > 15));
-  assert.ok(question.steps.length <= 3);
+  assert.ok(question.steps.length <= 9);
   for (const step of question.steps) {
     assert.ok(Number.isFinite(step.answer) && step.answer >= 0);
     if (step.unit === 'probability') assert.ok(step.answer <= 1);
@@ -52,9 +52,33 @@ function posterior(models, s, f) {
   return models.map((model, i) => ({ ...model, weight: raw[i] / sum, ...('a' in model ? { a: model.a + s, b: model.b + f } : {}) }));
 }
 function predict(models, s, f) { return models.reduce((sum, model) => sum + model.weight * sequence(model, s, f), 0); }
+function lawData(q) {
+  const [, s, f] = q.context.match(/sequence D with (\d+) successes and (\d+) failures?/).map(Number);
+  const [, a, b] = q.table.rows[1].at(-1).match(/Beta\((\d+), (\d+)\)/).map(Number);
+  const beta = sequence({ a, b }, s, f), law = f ? 0 : 1;
+  return { s, f, a, b, beta, law, bf: law / beta };
+}
+function batchData(q) {
+  const ms = q.table.rows.map(([, prior]) => {
+    const [, a, b] = prior.match(/Beta\((\d+), (\d+)\)/).map(Number);
+    return { a, b };
+  });
+  const counts = name => {
+    const tokens = q.context.match(new RegExp(`${name} = \\(([^)]+)\\)`))[1].split(', ');
+    assert.ok(tokens.every(token => ['S', 'F'].includes(token)));
+    return [tokens.filter(token => token === 'S').length, tokens.filter(token => token === 'F').length];
+  };
+  const [s1, f1] = counts('D1'), [s2, f2] = counts('D2');
+  const firstBF = sequence(ms[0], s1, f1) / sequence(ms[1], s1, f1);
+  const updated = ms.map(m => ({ a: m.a + s1, b: m.b + f1 }));
+  const secondBF = sequence(updated[0], s2, f2) / sequence(updated[1], s2, f2);
+  const jointBF = sequence(ms[0], s1 + s2, f1 + f2) / sequence(ms[1], s1 + s2, f1 + f2);
+  return { ms, s1, f1, s2, f2, firstBF, secondBF, jointBF };
+}
+
 
 test('seven assessed skills generate complete, varied numerical questions in one stream', () => {
-  assert.equal(GENERATOR_VERSION, 4);
+  assert.equal(GENERATOR_VERSION, 5);
   assert.equal(skills.length, 7);
   const ids = new Set();
   for (const skill of skills) for (let seed = 0; seed < 480; seed++) {
@@ -74,18 +98,35 @@ test('seed boundaries are reproducible and invalid inputs are rejected', () => {
   assert.throws(() => generateQuestion('chapter-3', 1), RangeError);
 });
 
-test('total probability and missing-rate variants agree with table arithmetic', () => {
+test('probability rules agree with valid event and table arithmetic', () => {
   const variants = new Set();
   for (let seed = 0; seed < 240; seed++) {
     const q = generateQuestion('probability', seed);
     const rows = q.table.rows;
+    if (q.title === 'Condition on a group') {
+      const [[, both, artOnly], [, musicOnly, neither]] = rows;
+      assert.ok([both, artOnly, musicOnly, neither].every(n => Number.isInteger(n) && n >= 0));
+      assert.equal(both + artOnly + musicOnly + neither, 100);
+      const givenMusic = q.prompt.includes('visitor attended music,');
+      const denominator = both + (givenMusic ? musicOnly : artOnly);
+      near(q.answer, both / denominator);
+      variants.add(givenMusic ? 'conditional-music' : 'conditional-art');
+      continue;
+    }
+    if (q.title === 'Allow for overlapping events') {
+      const [a, b, overlap] = rows.map(row => Number(row[1]));
+      assert.ok(overlap >= Math.max(0, a + b - 1) - 1e-12 && overlap <= Math.min(a, b));
+      near(q.answer, a + b - overlap);
+      variants.add('union');
+      continue;
+    }
     const backwards = rows.some(row => row[2] === '?');
     variants.add(backwards ? 'missing' : `total-${rows.length}`);
     const total = rows.reduce((sum, row) => sum + Number(row[1]) * (row[2] === '?' ? q.answer : Number(row[2])), 0);
     if (backwards) near(total, Number(q.prompt.match(/probability is ([\d.]+)/)[1].replace(/\.$/, '')));
     else near(q.answer, total);
   }
-  assert.deepEqual([...variants].sort(), ['missing', 'total-2', 'total-3']);
+  assert.deepEqual([...variants].sort(), ['conditional-art', 'conditional-music', 'missing', 'total-2', 'total-3', 'union']);
 });
 
 test('sequence, count, and tail variants agree with enumeration of ordered outcomes', () => {
@@ -120,6 +161,17 @@ test('joint prediction updates both shared model identity and uncertain rate', (
     const q = generateQuestion('prediction', seed);
     const [, s, failures] = q.context.match(/sequence with (\d+) successes and (\d+) failures/).map(Number);
     const models = parseModels(q), post = posterior(models, s, failures);
+    if (q.title === 'Learn from several beta forecasters') {
+      assert.ok(models.every(m => 'a' in m));
+      assert.equal(new Set(models.map(m => `${m.a},${m.b}`)).size, models.length);
+      near(q.answer, predict(post, 1, 0));
+      post.forEach((m, i) => {
+        near(q.steps[models.length + i].answer, m.weight);
+        near(q.steps[2 * models.length + i].answer, m.a / (m.a + m.b));
+      });
+      variants.add(`all-beta-${models.length}`);
+      continue;
+    }
     const count = q.prompt.includes('exactly two');
     const one = q.prompt.includes('next trial succeeds');
     variants.add(`${'a' in models[1] ? 'beta' : 'fixed'}-${count ? 'count' : one ? 'one' : 'joint'}`);
@@ -128,7 +180,7 @@ test('joint prediction updates both shared model identity and uncertain rate', (
     if (!one && !count && Math.abs(expected - predict(post, 1, 0) ** 2) > 0.001) distinguishesNaiveSquaring = true;
   }
   assert.ok(distinguishesNaiveSquaring);
-  assert.equal(variants.size, 6);
+  assert.equal(variants.size, 8);
 });
 
 test('linked three-model exams are reproducible and all five answers stay consistent', () => {
@@ -170,11 +222,17 @@ test('Bayes reversal and prior mixtures normalize and average the stated models'
   const bayesVariants = new Set(), mixtureVariants = new Set();
   for (let seed = 0; seed < 300; seed++) {
     const q = generateQuestion('bayes', seed);
-    const failures = q.prompt.includes('failed inspection') ? 1 : 0;
-    const successes = q.prompt.includes('followed by') ? 1 : failures ? 0 : q.prompt.includes('two passed') ? 2 : 1;
-    const bayesModels = parseModels(q);
-    bayesVariants.add(`${bayesModels.length}-${successes}-${failures}`);
-    near(q.answer, posterior(bayesModels, successes, failures)[0].weight);
+    if (q.title === 'Posterior probability of a general law') {
+      const { s, f } = lawData(q);
+      near(q.answer, posterior(parseModels(q), s, f)[0].weight);
+      bayesVariants.add('law');
+    } else {
+      const failures = q.prompt.includes('failed inspection') ? 1 : 0;
+      const successes = q.prompt.includes('followed by') ? 1 : failures ? 0 : q.prompt.includes('two passed') ? 2 : 1;
+      const bayesModels = parseModels(q);
+      bayesVariants.add(`${bayesModels.length}-${successes}-${failures}`);
+      near(q.answer, posterior(bayesModels, successes, failures)[0].weight);
+    }
     const mixture = generateQuestion('mixtures', seed);
     const [, k, n] = mixture.prompt.match(/exactly (\d+) of the first (\d+)/).map(Number);
     let combination = 1;
@@ -183,7 +241,7 @@ test('Bayes reversal and prior mixtures normalize and average the stated models'
     mixtureVariants.add(mixtureModels.length === 3 ? 'three' : mixtureModels[0].p === 1 ? 'spike' : 'two');
     near(mixture.answer, combination * predict(mixtureModels, k, n - k));
   }
-  assert.equal(bayesVariants.size, 8);
+  assert.equal(bayesVariants.size, 9);
   assert.deepEqual([...mixtureVariants].sort(), ['spike', 'three', 'two']);
 });
 
@@ -201,6 +259,11 @@ test('beta variants update parameters and integrate the shared unknown rate', ()
       const [, s, failures] = q.prompt.match(/(\d+) successes and (\d+) failures/).map(Number);
       near(q.answer, (s + 1) / (s + failures + 2));
       variants.add(failures === 0 ? 'laplace-all' : 'laplace-mixed');
+    } else if (q.title === 'Estimate the success rate') {
+      const [, a, b] = q.context.match(/Beta\((\d+), (\d+)\)/).map(Number);
+      const [, s, f] = q.context.match(/observed (\d+) successes and (\d+) failures/).map(Number);
+      near(q.answer, (a + s) / (a + b + s + f));
+      variants.add('posterior-mean');
     } else {
       const [, a, b] = q.context.match(/Beta\((\d+), (\d+)\)/).map(Number);
       const history = q.context.match(/observed (\d+) successes and (\d+) failures/);
@@ -212,14 +275,23 @@ test('beta variants update parameters and integrate the shared unknown rate', ()
       near(q.answer, probability);
     }
   }
-  assert.deepEqual([...variants].sort(), ['laplace-all', 'laplace-mixed', 'posterior', 'prior', 'update-a', 'update-b']);
+  assert.deepEqual([...variants].sort(), ['laplace-all', 'laplace-mixed', 'posterior', 'posterior-mean', 'prior', 'update-a', 'update-b']);
 });
 
 test('Bayes factor orientation and probability-to-odds conversions are consistent', () => {
   const variants = new Set();
   for (let seed = 0; seed < 400; seed++) {
     const q = generateQuestion('bayes-factors', seed);
-    if (q.context.startsWith('BF_AB')) {
+    if (q.title === 'Evidence for a general law') {
+      near(q.answer, lawData(q).bf);
+      variants.add('law');
+    } else if (q.title === 'Evidence from a second batch' || q.title === 'Combine evidence across two batches') {
+      const { firstBF, secondBF, jointBF } = batchData(q);
+      near(firstBF * secondBF, jointBF);
+      const total = q.title.startsWith('Combine');
+      near(q.answer, total ? jointBF : secondBF);
+      variants.add(total ? 'sequential-total' : 'sequential');
+    } else if (q.context.startsWith('BF_AB')) {
       const first = Number(q.context.match(/BF_AB = (\d+)/)[1]);
       const second = q.context.match(/BF_BC = (\d+)/);
       variants.add(second ? 'transitivity' : 'reciprocal');
@@ -251,5 +323,107 @@ test('Bayes factor orientation and probability-to-odds conversions are consisten
       variants.add('marginal');
     }
   }
-  assert.deepEqual([...variants].sort(), ['both', 'forecasters', 'marginal', 'odds', 'reciprocal', 'transitivity']);
+  assert.deepEqual([...variants].sort(), ['both', 'forecasters', 'law', 'marginal', 'odds', 'reciprocal', 'sequential', 'sequential-total', 'transitivity']);
+});
+
+test('general-law questions include uniform alternatives, unequal odds, and exact zero after an exception', () => {
+  const coverage = new Set();
+  let distinguishesLawFromNextSuccess = false;
+  for (let seed = 0; seed < 1200; seed++) for (const skill of ['bayes', 'bayes-factors']) {
+    const q = generateQuestion(skill, seed);
+    if (!q.title.includes('general law')) continue;
+    const { s, f, a, b, beta, bf } = lawData(q);
+    const uniform = a === 1 && b === 1;
+    coverage.add(`${skill}-${f ? 'exception' : uniform ? 'uniform' : 'beta'}`);
+    if (f) {
+      assert.equal(q.answer, 0, 'an error-free law cannot generate an exception');
+      assert.ok(beta > 0, 'the alternative still predicts these data');
+    } else if (uniform) near(bf, s + 1);
+    if (skill === 'bayes') {
+      const prior = Number(q.table.rows[0][1]);
+      const odds = prior / (1 - prior) * bf;
+      near(q.answer, odds / (1 + odds));
+      near(q.steps.at(-1).answer, odds);
+      coverage.add(prior === .5 ? 'equal-priors' : 'unequal-priors');
+      const betaMean = (a + s) / (a + b + s + f);
+      const next = q.answer + (1 - q.answer) * betaMean;
+      if (!f && Math.abs(next - q.answer) > .01) distinguishesLawFromNextSuccess = true;
+      if (uniform && !f && prior === .5) near(q.answer, (s + 1) / (s + 2));
+    }
+  }
+  assert.deepEqual([...coverage].sort(), ['bayes-beta', 'bayes-exception', 'bayes-factors-beta', 'bayes-factors-exception', 'bayes-factors-uniform', 'bayes-uniform', 'equal-priors', 'unequal-priors']);
+  assert.ok(distinguishesLawFromNextSuccess);
+});
+
+test('sequential evidence predicts new batches after learning and obeys the chain identity', () => {
+  const coverage = new Set();
+  let separatesFreshPriorError = false, separatesIncrementFromTotal = false;
+  for (let seed = 0; seed < 1200; seed++) {
+    const q = generateQuestion('bayes-factors', seed);
+    if (!['Evidence from a second batch', 'Combine evidence across two batches'].includes(q.title)) continue;
+    const { ms, s2, f2, firstBF, secondBF, jointBF } = batchData(q);
+    const total = q.title.startsWith('Combine');
+    near(q.answer, total ? jointBF : secondBF);
+    near(firstBF * secondBF, jointBF);
+    assert.ok(q.answer > 0 && Number.isFinite(q.answer));
+    coverage.add(total ? 'total' : 'additional');
+    coverage.add(q.answer < 1 ? 'favors-B' : q.answer > 1 ? 'favors-A' : 'neutral');
+    const freshPriorBF = sequence(ms[0], s2, f2) / sequence(ms[1], s2, f2);
+    if (Math.abs(secondBF - freshPriorBF) > .05) separatesFreshPriorError = true;
+    if (Math.abs(secondBF - jointBF) > .05) separatesIncrementFromTotal = true;
+  }
+  assert.ok(coverage.has('total') && coverage.has('additional'));
+  assert.ok(coverage.has('favors-A') && coverage.has('favors-B'));
+  assert.ok(separatesFreshPriorError);
+  assert.ok(separatesIncrementFromTotal);
+});
+
+test('beta forecaster prediction updates both distributions and model weights before averaging', () => {
+  const sizes = new Set();
+  let uniform = false, equalPrior = false, unequalPrior = false;
+  let separatesOldWeights = false, separatesBestOnly = false;
+  for (let seed = 0; seed < 1200; seed++) {
+    const q = generateQuestion('prediction', seed);
+    if (q.title !== 'Learn from several beta forecasters') continue;
+    const [, s, f] = q.context.match(/sequence with (\d+) successes and (\d+) failures/).map(Number);
+    const ms = parseModels(q), post = posterior(ms, s, f), means = post.map(m => m.a / (m.a + m.b));
+    sizes.add(ms.length);
+    uniform ||= ms.some(m => m.a === 1 && m.b === 1);
+    equalPrior ||= ms.every(m => Math.abs(m.weight - 1 / ms.length) < 1e-12);
+    unequalPrior ||= ms.some(m => Math.abs(m.weight - 1 / ms.length) > 1e-12);
+    near(ms.reduce((total, m) => total + m.weight, 0), 1);
+    near(post.reduce((total, m) => total + m.weight, 0), 1);
+    const expected = post.reduce((total, m, i) => total + m.weight * means[i], 0);
+    near(q.answer, expected);
+    const oldWeights = ms.reduce((total, m, i) => total + m.weight * means[i], 0);
+    if (Math.abs(expected - oldWeights) > .01) separatesOldWeights = true;
+    const best = post.reduce((winner, m, i) => m.weight > post[winner].weight ? i : winner, 0);
+    if (Math.abs(expected - means[best]) > .01) separatesBestOnly = true;
+    post.forEach((m, i) => {
+      near(q.steps[ms.length + i].answer, m.weight);
+      near(q.steps[2 * ms.length + i].answer, means[i]);
+    });
+  }
+  assert.deepEqual([...sizes].sort(), [2, 3]);
+  assert.ok(uniform && equalPrior && unequalPrior);
+  assert.ok(separatesOldWeights && separatesBestOnly);
+});
+
+test('overlap examples can exceed one before subtraction without declaring an invalid probability', () => {
+  let sawSumAboveOne = false;
+  for (let seed = 0; seed < 2500; seed++) {
+    const q = generateQuestion('probability', seed);
+    if (q.title !== 'Allow for overlapping events') continue;
+    const [a, b, overlap] = q.table.rows.map(row => Number(row[1]));
+    const cells = [overlap, a - overlap, b - overlap, 1 - a - b + overlap];
+    assert.ok(cells.every(value => value >= -1e-12 && value <= 1));
+    near(cells.reduce((sum, value) => sum + value, 0), 1);
+    if (a + b > 1) {
+      sawSumAboveOne = true;
+      assert.equal(q.steps[0].unit, 'number');
+      near(q.steps[0].answer, a + b);
+      assert.ok(q.answer <= 1);
+    }
+  }
+  assert.ok(sawSumAboveOne);
 });

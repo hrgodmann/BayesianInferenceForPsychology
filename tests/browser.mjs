@@ -60,6 +60,29 @@ async function open(skillId) {
   await page.locator('.question-card').waitFor();
   assert.equal(await page.locator('#setup-form, #practice-difficulty, #practice-length').count(), 0, 'Card opens a question directly');
 }
+function findCase(skillId, title, predicate = () => true) {
+  for (let seed = 0; seed < 20000; seed++) {
+    const question = generateQuestion(skillId, seed);
+    if ((typeof title === 'string' ? question.title === title : title.test(question.title)) && predicate(question)) {
+      return { skillId, seed, question };
+    }
+  }
+  assert.fail(`No generated ${skillId} question matched ${title}`);
+}
+async function openCase({ skillId, seed, question }) {
+  await home();
+  await page.evaluate(seed => Object.defineProperty(crypto, 'getRandomValues', {
+    configurable: true, value(array) { array.fill(seed); return array; },
+  }), seed);
+  await page.locator(`[data-action="skill"][data-id="${skillId}"]`).click();
+  await page.locator('.question-card').waitFor();
+  assert.equal(await page.locator('.question-title').innerText(), question.title);
+  assert.equal(await page.locator('.question-context').innerText(), question.context);
+  assert.equal(await page.locator('.question-prompt').innerText(), question.prompt);
+  const rows = await page.locator('.question-card tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent.trim())));
+  assert.deepEqual(rows, question.table?.rows.map(row => row.map(String)) || [], 'The visible table contains every generated model and prior');
+  assert.equal(await page.locator('#setup-form, #practice-difficulty, #practice-length').count(), 0);
+}
 async function current(skillId, part = 0) {
   const context = await page.locator('.question-context').innerText();
   const prompt = await page.locator('.question-prompt').innerText();
@@ -97,6 +120,34 @@ async function overflow(label) {
 async function simplifiedControls() {
   assert.equal(await page.locator('[data-action="bookmark"], [data-action="bookmarks"], [data-action="review"], [data-action="self-mark"], [data-action="reset"], [data-action="resume"], [data-action="finish"], .resume-banner, .summary-wrap, .progress-stats, .save-label, #practice-difficulty, #practice-length, #setup-form, #scratchpad').count(), 0);
   assert.equal(await page.locator('[data-nav="progress"]').count(), 0);
+}
+async function checkGuidedAnswers(question) {
+  await click('toggle-guided');
+  assert.equal(await page.locator('[data-step]').count(), question.steps.length);
+  for (const [i, step] of question.steps.entries()) {
+    await page.locator(`#step-${i}`).fill(formatAnswer(step));
+    await page.locator(`#step-${i}`).press('Enter');
+    assert.equal(await page.locator(`#step-feedback-${i}`).innerText(), 'Correct.', `${question.title}: guided step ${i + 1}`);
+  }
+}
+async function checkCase(item) {
+  await openCase(item);
+  const q = item.question;
+  await checkGuidedAnswers(q);
+  if (q.unit === 'ratio') {
+    assert.doesNotMatch(await page.locator('#answer-help').innerText(), /percentages work/);
+    await answer('50%');
+    assert.match(await page.locator('#answer-error').innerText(), /without a percent sign/);
+    assert.equal(await page.locator('.result-card').count(), 0, 'A malformed ratio does not reveal or grade the question');
+  }
+  await page.locator('#numeric-answer').fill(q.answer === 0 ? '0' : formatAnswer(q));
+  await page.locator('#numeric-answer').press('Enter');
+  await page.locator('.result-card.correct').waitFor();
+  assert.equal(await page.locator('.correct-answer strong').innerText(), formatAnswer(q));
+  assert.equal(await page.locator('.worked-solution li').count(), q.steps.length);
+  assert.match(await page.locator('.source-note').innerText(), /Course book/);
+  await simplifiedControls();
+  await noStorage();
 }
 
 try {
@@ -197,16 +248,6 @@ try {
   assert.equal(await page.locator('.hint-panel, .intermediate-answers, .result-card').count(), 0);
   console.log('Passed: draft retention, Help keyboard focus, answer reveal, and clean next-question state.');
 
-  await open('bayes-factors');
-  assert.doesNotMatch(await page.locator('#answer-help').innerText(), /percentages work/);
-  await answer('50%');
-  assert.match(await page.locator('#answer-error').innerText(), /without a percent sign/);
-  assert.equal(await page.locator('.result-card').count(), 0);
-  const ratioQuestion = await current('bayes-factors');
-  await page.locator('#numeric-answer').fill(ratioQuestion.formatted);
-  await page.locator('#numeric-answer').press('Enter');
-  await page.locator('.result-card.correct').waitFor();
-
   await click('pause');
   await page.locator('[data-action="skill"]').first().waitFor();
   assert.equal(await page.locator('.resume-banner').count(), 0);
@@ -264,18 +305,64 @@ try {
     if (width === 320 || width === 1440) await page.screenshot({ path: `.artifacts/simplified-solution-${width}.png`, fullPage: true });
   }
 
-  // Reproduce numerical boundary cases through the public input controls. The
-  // expected answers are independently known values, not app-generated strings.
+  const forecasters = [2, 3].map(count => findCase('prediction', 'Learn from several beta forecasters', q => q.table.rows.length === count));
+  const sequential = [
+    findCase('bayes-factors', 'Evidence from a second batch'),
+    findCase('bayes-factors', 'Combine evidence across two batches'),
+  ];
+  const additions = [
+    findCase('probability', 'Condition on a group'),
+    findCase('probability', 'Allow for overlapping events'),
+    findCase('beta', 'Estimate the success rate'),
+    ...['bayes', 'bayes-factors'].flatMap(skill => {
+      const title = skill === 'bayes' ? 'Posterior probability of a general law' : 'Evidence for a general law';
+      return [findCase(skill, title, q => q.answer > 0), findCase(skill, title, q => q.answer === 0)];
+    }),
+    ...sequential,
+    ...forecasters,
+  ];
+  for (const item of additions) {
+    await checkCase(item);
+    if (item.question.answer === 0) {
+      assert.equal(await page.locator('.correct-answer strong').innerText(), '0.00', 'A failure makes the error-free general law impossible; zero is a valid answer');
+      assert.match(await page.locator('.explanation').innerText(), /failure rules out/);
+    }
+  }
+  for (const item of forecasters) {
+    const count = item.question.table.rows.length;
+    assert.equal(item.question.steps.filter(step => step.prompt.startsWith('Posterior probability of Forecaster')).length, count, 'Every forecaster has a guided posterior-weight calculation');
+    assert.equal(item.question.steps.length, 3 * count, 'Guidance includes likelihoods, posterior weights, and updated within-model predictions');
+  }
+  console.log('Passed: conditional probability, overlapping events, beta posterior means, general-law posteriors/BFs including zero, sequential BFs, and two/three-forecaster averaging.');
+
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const [i, item] of [forecasters[1], ...sequential].entries()) {
+      await openCase(item);
+      await click('toggle-guided');
+      await overflow(`${item.question.title}, guided, ${width}px`);
+      await page.screenshot({ path: `.artifacts/additions-guided-${i}-${width}.png`, fullPage: true });
+      await click('reveal');
+      await page.locator('.result-card.revealed').waitFor();
+      assert.equal(await page.locator('.worked-solution li').count(), item.question.steps.length);
+      await overflow(`${item.question.title}, solution, ${width}px`);
+      await page.screenshot({ path: `.artifacts/additions-solution-${i}-${width}.png`, fullPage: true });
+      await simplifiedControls();
+      await noStorage();
+    }
+  }
+  console.log('Passed: long forecaster and sequential worked content on 320px and 390px screens.');
+  await page.setViewportSize({ width: 1440, height: 1080 });
+
+  // Find numerical boundary cases by their content, so adding generator branches
+  // does not invalidate the regression by moving its old seed to another variant.
+  const halfCase = findCase('prediction', 'Predict several future observations', q => q.steps.some(s => s.answer < .125 && Math.abs(s.answer - .125) < 1e-12));
+  const tinyCase = findCase('sequences', 'At least two successes', q => Math.abs(q.steps[0].answer - .0000128) < 1e-15);
   for (const item of [
-    { seed: 117, skill: 'prediction', step: 1, places: 2, incorrect: '0.12', correct: '0.13' },
-    { seed: 76, skill: 'sequences', step: 0, places: 6, incorrect: '0', correct: '0.000013' },
+    { ...halfCase, step: halfCase.question.steps.findIndex(s => s.answer < .125 && Math.abs(s.answer - .125) < 1e-12), places: 2, incorrect: '0.12', correct: '0.13' },
+    { ...tinyCase, step: 0, places: 6, incorrect: '0', correct: '0.000013', nearOne: true },
   ]) {
-    await home();
-    await page.evaluate(seed => Object.defineProperty(crypto, 'getRandomValues', {
-      configurable: true, value(array) { array.fill(seed); return array; },
-    }), item.seed);
-    await page.locator(`[data-action="skill"][data-id="${item.skill}"]`).click();
-    await page.locator('.question-card').waitFor();
+    await openCase(item);
     await click('toggle-guided');
     assert.match(await page.locator(`#step-help-${item.step}`).innerText(), new RegExp(`${item.places} decimal places`));
     const field = page.locator(`#step-${item.step}`);
@@ -285,7 +372,7 @@ try {
     await field.fill(item.correct);
     await field.press('Enter');
     assert.equal(await page.locator(`#step-feedback-${item.step}`).innerText(), 'Correct.');
-    if (item.seed === 76) {
+    if (item.nearOne) {
       assert.match(await page.locator('label[for="numeric-answer"]').innerText(), /4 decimal places/);
       await answer('0.9996');
       await page.locator('.result-card.correct').waitFor();

@@ -64,8 +64,11 @@ export function betaCount(a, b, n, k) {
   // Small classroom counts are more accurate without a log/exp round trip,
   // especially when the exact result is a decimal rounding boundary.
   if (n <= 100) {
-    const direct = choose(n, k) * betaSequence(a, b, k, n - k);
-    if (direct > 0 && Number.isFinite(direct)) return direct;
+    const sequence = betaSequence(a, b, k, n - k);
+    const direct = choose(n, k) * sequence;
+    // Subnormal sequence values have already lost relative precision; a large
+    // counting coefficient cannot restore it. Use log space in that case.
+    if (sequence >= 2 ** -1022 && direct > 0 && Number.isFinite(direct)) return direct;
   }
   // Multiplying in log space also works when the counting coefficient alone
   // overflows, although the final probability is representable.

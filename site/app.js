@@ -115,7 +115,7 @@ function nextQuestion() {
     practice.index = 0;
   }
   resetInputs(); render(); window.scrollTo(0, 0);
-  $('.question-title').setAttribute('tabindex', '-1'); $('.question-title').focus({ preventScroll: true });
+  $('.question-title').setAttribute('tabindex', '-1'); $('.question-title').focus();
 }
 
 $('.skip-link').addEventListener('click', e => {
@@ -160,7 +160,10 @@ function routeChanged() {
   if (['#chapters', '#progress'].includes(location.hash)) history.replaceState(null, '', '#skills');
   if (location.hash !== '#practice') practice = null;
   if (location.hash === '#practice' && !practice) history.replaceState(null, '', '#skills');
-  render(); window.scrollTo(0, 0); $('#main').focus({ preventScroll: true });
+  render(); window.scrollTo(0, 0);
+  if (location.hash === '#practice') {
+    $('.question-title').setAttribute('tabindex', '-1'); $('.question-title').focus();
+  } else $('#main').focus({ preventScroll: true });
   if (location.hash === '#skills') $('#skills')?.scrollIntoView({ block: 'start' });
 }
 window.addEventListener('hashchange', routeChanged);

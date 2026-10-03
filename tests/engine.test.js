@@ -31,3 +31,22 @@ test('rounding absorbs arithmetic noise at halves without accepting adjacent ans
   assert.equal(roundTo(.62500001), .63);
   assert.equal(formatAnswer({ answer: .0000128, decimals: 6 }), '0.000013');
 });
+
+test('numeric conversion rejects overflow and nonzero underflow without losing genuine zeros', () => {
+  const zeroQuestion = { answer: 0, unit: 'probability', decimals: 2 };
+  for (const input of [
+    '-1e-999', '1e-999', '-1/1e999', '1/1e999', '0/1e999',
+    '1e999/1e999', '1e-999/1e-999', '1e-300/1e100',
+    '-1e-300/1e100', '5e-324%', '-5e-324%', '1e999',
+  ]) {
+    assert.ok(parseNumeric(input).error, input);
+    assert.ok(gradeAnswer(zeroQuestion, input).error, `${input} must not be graded as zero`);
+  }
+  for (const input of ['0e-999', '-0e-999', '0e999', '0e-999/2', '-0/1e308', '0e-999%']) {
+    assert.equal(parseNumeric(input).value === 0, true, input);
+    assert.equal(gradeAnswer(zeroQuestion, input).correct, true, input);
+  }
+  assert.equal(parseNumeric('2e-300/4e-300').value, .5);
+  assert.equal(parseNumeric('1e308/1e308').value, 1);
+  assert.equal(parseNumeric('5e-324').value, Number.MIN_VALUE);
+});

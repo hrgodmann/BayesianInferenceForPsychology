@@ -131,7 +131,7 @@ dialog h2 { margin-bottom: 25px; padding-right: 10px; }
 .answer-choice.selected { background: #f3e4ca; border-color: #965632; }
 .answer-choice.answer-correct { background: #ededd8; color: var(--olive); border-color: #7c8250; }
 .answer-key { background: #f9f0df; border-color: #ceba98; border-radius: 3px; color: #7c6243; }
-.numeric-row input { background: #fffdf7; border-color: #bea17b; border-radius: 5px; }
+.numeric-row input { background: #fffdf7; border-color: #9f7d52; border-radius: 5px; }
 .numeric-row input:disabled { background: #f4ebd9; opacity: 1; color: #6a573d; }
 .input-help { color: #77644c; }
 .hint-panel { border-color: #d3b67a; border-radius: 3px 12px 3px 3px; background: #f9edcc; box-shadow: 2px 3px 0 #dec69540; }

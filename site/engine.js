@@ -10,6 +10,14 @@ export function roundTo(n, places = 2) {
   return Math.round(scaled) / scale;
 }
 
+function finiteNumericComponent(text) {
+  const value = Number(text);
+  // A nonzero mantissa can silently become signed zero below the numeric
+  // range. Preserve genuine zeros such as 0e-999, but reject that underflow.
+  const nonzeroMantissa = /[1-9]/.test(text.split(/[eE]/)[0]);
+  return Number.isFinite(value) && !(value === 0 && nonzeroMantissa) ? value : undefined;
+}
+
 export function parseNumeric(raw, unit = 'probability') {
   let text = String(raw ?? '').trim();
   if (!text) return { error: 'Enter an answer first, or show the solution.' };
@@ -19,14 +27,25 @@ export function parseNumeric(raw, unit = 'probability') {
   if (percent) text = text.slice(0, -1).trim();
   const pattern = '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
   let value;
-  if (new RegExp(`^${pattern}$`).test(text)) value = Number(text);
+  if (new RegExp(`^${pattern}$`).test(text)) value = finiteNumericComponent(text);
   else {
     const fraction = text.match(new RegExp(`^(${pattern})\\s*/\\s*(${pattern})$`));
-    if (fraction && Number(fraction[2]) !== 0) value = Number(fraction[1]) / Number(fraction[2]);
+    if (fraction) {
+      const numerator = finiteNumericComponent(fraction[1]);
+      const denominator = finiteNumericComponent(fraction[2]);
+      if (numerator !== undefined && denominator !== undefined && denominator !== 0) {
+        value = numerator / denominator;
+        if (numerator !== 0 && value === 0) value = undefined;
+      }
+    }
   }
   if (!Number.isFinite(value)) return { error: 'Use a number such as 0.42, or a fraction such as 2/3.' };
-  if (percent) value /= 100;
   if (value < 0) return { error: 'Enter a non-negative number.' };
+  if (percent) {
+    const converted = value / 100;
+    if (value !== 0 && converted === 0) return { error: 'Use a number such as 0.42, or a fraction such as 2/3.' };
+    value = converted;
+  }
   if (unit === 'probability' && value > 1) return { error: 'A probability must be between 0 and 1. Percentages such as 42% also work.' };
   return { value };
 }

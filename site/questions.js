@@ -1,8 +1,8 @@
 import { choose, fixedSequence, betaSequence, betaCount, updateModels, predictModels } from './math.js';
 
-export const GENERATOR_VERSION = 4;
+export const GENERATOR_VERSION = 5;
 export const skills = [
-  { id: 'probability', title: 'Probability rules', description: 'Combine probabilities across groups.', icon: 'tree' },
+  { id: 'probability', title: 'Probability rules', description: 'Work with conditional and combined probabilities.', icon: 'tree' },
   { id: 'bayes', title: 'Bayes’ rule', description: 'Update which explanation is most likely.', icon: 'cycle' },
   { id: 'sequences', title: 'Sequences & counts', description: 'Calculate ordered outcomes and success counts.', icon: 'measure' },
   { id: 'beta', title: 'Learning a proportion', description: 'Update beta distributions and predict outcomes.', icon: 'uncertainty' },
@@ -78,6 +78,42 @@ function finish(skillId, seed, item, suffix = '') {
 }
 
 function probability(rng) {
+  const variant = pick(rng, ['total', 'total', 'conditional', 'union']);
+  if (variant === 'conditional' || variant === 'union') {
+    // Construct disjoint cells first, so all displayed margins and overlaps
+    // describe a possible population without assuming independence.
+    const both = integer(rng, 5, 25), artOnly = integer(rng, 10, 30), musicOnly = integer(rng, 10, 30);
+    const neither = 100 - both - artOnly - musicOnly;
+    if (variant === 'conditional') {
+      const givenMusic = rng() < 0.5;
+      const given = givenMusic ? 'music' : 'art', target = givenMusic ? 'art' : 'music';
+      const denominator = both + (givenMusic ? musicOnly : artOnly);
+      return {
+        title: 'Condition on a group',
+        context: 'The table counts 100 visitors by the activities they attended. A visitor can attend both art and music, one activity, or neither. Select one visitor at random.',
+        table: { headers: ['Visitors', 'Music', 'No music'], rows: [['Art', both, artOnly], ['No art', musicOnly, neither]] },
+        prompt: `Given that the visitor attended ${given}, what is the probability that they also attended ${target}?`,
+        answer: both / denominator,
+        hints: [`Restrict the sample space to visitors who attended ${given}.`, `P(${target} | ${given}) = P(${target} and ${given}) / P(${given}). Count the visitors in both activities and divide by the total in the conditioning group.`],
+        steps: [step(`Number of visitors who attended ${given}`, denominator, 'Conditioning group = both activities + only the given activity', `${both} + ${givenMusic ? musicOnly : artOnly} = ${denominator}`, 'number')],
+        explanation: `There are ${denominator} visitors in the ${given} group, and ${both} of them also attended ${target}. P(${target} | ${given}) = (${both}/100) / (${denominator}/100) = ${both}/${denominator} = ${f(both / denominator)}. The denominator counts the given group, not all 100 visitors.`,
+        source: book('3'),
+      };
+    }
+    const a = (both + artOnly) / 100, b = (both + musicOnly) / 100, intersection = both / 100;
+    const answer = (both + artOnly + musicOnly) / 100;
+    return {
+      title: 'Allow for overlapping events',
+      context: 'Select one visitor at random. A means that the visitor attended art; B means that they attended music. The activities can overlap.',
+      table: { headers: ['Event', 'Probability'], rows: [['Art: P(A)', f(a)], ['Music: P(B)', f(b)], ['Both: P(A ∩ B)', f(intersection)]] },
+      prompt: 'What is the probability that the visitor attended art or music, including visitors who attended both?',
+      answer,
+      hints: ['Adding P(A) and P(B) counts visitors in both activities twice.', 'Use P(A ∪ B) = P(A) + P(B) − P(A ∩ B).'],
+      steps: [step('Sum before removing the double-counted overlap', a + b, 'P(A) + P(B)', `${f(a)} + ${f(b)} = ${f(a + b)}`, 'number')],
+      explanation: `P(A ∪ B) = ${f(a)} + ${f(b)} − ${f(intersection)} = ${f(answer)}. Subtract the overlap once so visitors who attended both are counted once. “Or” includes both; independence is not assumed.`,
+      source: book('3'),
+    };
+  }
   const backwards = rng() < 1 / 3;
   const three = backwards || rng() < 0.5;
   const groupNames = three ? ['Morning', 'Afternoon', 'Evening'] : ['Morning', 'Afternoon'];
@@ -102,7 +138,76 @@ function probability(rng) {
   };
 }
 
+function generalLaw(rng, posterior) {
+  const scenario = pick(rng, ['uniform-equal', 'uniform-unequal', 'beta']);
+  const a = scenario === 'beta' ? integer(rng, 2, 5) : 1;
+  const b = scenario === 'beta' ? integer(rng, 1, 5) : 1;
+  const weight = scenario === 'uniform-equal' ? 0.5 : pick(rng, [0.2, 0.3, 0.6, 0.75]);
+  const s = integer(rng, 2, 7), fails = rng() < 0.2 ? 1 : 0;
+  const models = [
+    { name: 'Law H_L', type: 'fixed', weight, p: 1 },
+    { name: 'Beta alternative H_B', type: 'beta', weight: 1 - weight, a, b },
+  ];
+  const lawLikelihood = fails ? 0 : 1, betaLikelihood = betaSequence(a, b, s, fails);
+  const bf = lawLikelihood / betaLikelihood, priorOdds = weight / (1 - weight);
+  const posteriorOdds = priorOdds * bf, answer = posterior ? posteriorOdds / (1 + posteriorOdds) : bf;
+  const sequence = [...Array(s).fill('S'), ...Array(fails).fill('F')].join(', ');
+  const lawWorking = fails ? `1^${s} × (1 − 1)^${fails} = 0` : `1^${s} = 1`;
+  const likelihoodSteps = [
+    step('Probability of the observed sequence under H_L', lawLikelihood, 'P(D | H_L) = 1 for all successes; 0 if any failure occurs', lawWorking),
+    step('Probability of the observed sequence under H_B', betaLikelihood, 'P(D | H_B) = B(a + s, b + f) / B(a, b)', `${betaProduct(a, b, s, fails)} = ${f(betaLikelihood)}`),
+  ];
+  const evidenceWorking = `BF_LB = P(D | H_L) / P(D | H_B) = ${lawLikelihood} / ${f(betaLikelihood)} = ${f(bf)}.`;
+  return {
+    title: posterior ? 'Posterior probability of a general law' : 'Evidence for a general law',
+    context: `A proposed general law says an automated process always succeeds (H_L: θ = 1). The alternative H_B allows an uncertain success rate. These are the only two models considered. Under either model, all trials share the same θ and are independent conditional on it. Outcomes are recorded without measurement error. You observe one ordered sequence D with ${s} successes and ${fails} ${fails === 1 ? 'failure' : 'failures'}: (${sequence}), where S means success and F means failure.`,
+    table: posterior ? modelTable(models) : { headers: ['Model', 'Success rate'], rows: models.map(m => [m.name, modelText(m)]) },
+    prompt: posterior ? 'What is P(H_L | D), the posterior probability that the general law holds?' : 'What is BF_LB, the evidence for the general law H_L relative to the beta alternative H_B?',
+    answer, unit: posterior ? 'probability' : 'ratio',
+    hints: ['Calculate the probability of the whole observed sequence under each model. Under θ = 1, a single failure makes the sequence impossible.', posterior ? 'Divide the sequence probabilities to find BF_LB, multiply the prior odds by this Bayes factor, then convert posterior odds to a probability.' : 'Divide P(D | H_L) by P(D | H_B). Model prior probabilities do not enter a Bayes factor.'],
+    steps: posterior ? [...likelihoodSteps,
+      step('Bayes factor BF_LB', bf, 'BF_LB = P(D | H_L) / P(D | H_B)', `${lawLikelihood} / ${f(betaLikelihood)} = ${f(bf)}`, 'ratio'),
+      step('Posterior odds H_L:H_B', posteriorOdds, 'Posterior odds = [P(H_L) / P(H_B)] × BF_LB', `[${f(weight)} / ${f(1 - weight)}] × ${f(bf)} = ${f(posteriorOdds)}`, 'ratio'),
+    ] : likelihoodSteps,
+    explanation: `${evidenceWorking} ${posterior ? `Prior odds H_L:H_B = ${f(weight)} / ${f(1 - weight)} = ${f(priorOdds)}. Posterior odds = ${f(priorOdds)} × ${f(bf)} = ${f(posteriorOdds)}. P(H_L | D) = ${f(posteriorOdds)} / (1 + ${f(posteriorOdds)}) = ${f(answer)}. This is the probability that θ is exactly 1, not the probability that the next trial succeeds.` : `This compares how well the two models predict the observed sequence; it is neither a posterior model probability nor a next-success probability.`}${fails ? ' A failure rules out this error-free general law, while remaining possible under the beta alternative.' : a === 1 && b === 1 ? ` With a uniform beta alternative and ${s} successes, BF_LB = ${s} + 1 = ${s + 1}.` : ''}`,
+    source: book('14, 15, 22'),
+  };
+}
+
+function sequentialEvidence(rng, total) {
+  const a = integer(rng, 1, 5), b = integer(rng, 1, 5);
+  const alternatives = Array.from({ length: 25 }, (_, i) => ({ a: 1 + Math.floor(i / 5), b: 1 + i % 5 }))
+    .filter(model => model.a !== a || model.b !== b);
+  const other = pick(rng, alternatives);
+  const models = [{ name: 'Model A', a, b }, { name: 'Model B', ...other }];
+  const s1 = integer(rng, 1, 3), f1 = integer(rng, 0, 2);
+  const s2 = integer(rng, 1, 3), f2 = integer(rng, 0, 2);
+  const first = models.map(m => betaSequence(m.a, m.b, s1, f1));
+  const updated = models.map(m => ({ ...m, a: m.a + s1, b: m.b + f1 }));
+  const second = updated.map(m => betaSequence(m.a, m.b, s2, f2));
+  const firstBF = first[0] / first[1], secondBF = second[0] / second[1];
+  const answer = total ? firstBF * secondBF : secondBF;
+  const sequence = (s, fails) => [...Array(s).fill('S'), ...Array(fails).fill('F')].join(', ');
+  const secondSteps = updated.map((m, i) => step(`Probability of D2 given D1 under ${m.name}`, second[i],
+    'P(D2 | D1, model) = B(a + s1 + s2, b + f1 + f2) / B(a + s1, b + f1)',
+    `${betaProduct(m.a, m.b, s2, f2)} = ${f(second[i])}`));
+  return {
+    title: total ? 'Combine evidence across two batches' : 'Evidence from a second batch',
+    context: `Two models describe one unknown success rate θ. Under either model, every trial in both batches shares this same θ and is independent conditional on it. The table gives the parameter priors before either batch. The first ordered batch is D1 = (${sequence(s1, f1)}). The second ordered batch is D2 = (${sequence(s2, f2)}). S means success and F means failure. D2 contains new observations collected after D1. BF_AB compares Model A with Model B.`,
+    table: { headers: ['Model', 'Prior for θ'], rows: models.map(m => [m.name, `Beta(${m.a}, ${m.b})`]) },
+    prompt: total ? 'What is BF_AB(D1, D2), the total evidence for Model A relative to Model B from both batches?' : 'What is BF_AB(D2 | D1), the additional evidence for Model A relative to Model B from the second batch?',
+    answer, unit: 'ratio',
+    hints: ['First update each model’s beta parameters with the successes and failures in D1. Use these updated distributions to predict the whole ordered sequence D2.', total ? 'Multiply BF_AB(D1) by BF_AB(D2 | D1). Do not predict the second batch using the original parameter priors.' : 'Divide P(D2 | D1, Model A) by P(D2 | D1, Model B). D1 has already been learned from; do not count its evidence a second time.'],
+    steps: total ? [step('Bayes factor from the first batch, BF_AB(D1)', firstBF,
+      'BF_AB(D1) = P(D1 | A) / P(D1 | B)',
+      `[${betaProduct(a, b, s1, f1)}] / [${betaProduct(other.a, other.b, s1, f1)}] = ${f(first[0])} / ${f(first[1])} = ${f(firstBF)}`, 'ratio'), ...secondSteps] : secondSteps,
+    explanation: `D1 contains ${s1} ${s1 === 1 ? 'success' : 'successes'} and ${f1} ${f1 === 1 ? 'failure' : 'failures'}. The updated parameter distributions are ${updated.map((m, i) => `${m.name}: Beta(${models[i].a} + ${s1}, ${models[i].b} + ${f1}) = Beta(${m.a}, ${m.b})`).join('; ')}. ${updated.map((m, i) => `P(D2 | D1, ${m.name}) = ${betaProduct(m.a, m.b, s2, f2)} = ${f(second[i])}.`).join(' ')} BF_AB(D2 | D1) = ${f(second[0])} / ${f(second[1])} = ${f(secondBF)}.${total ? ` BF_AB(D1) = ${f(first[0])} / ${f(first[1])} = ${f(firstBF)}. BF_AB(D1, D2) = BF_AB(D1) × BF_AB(D2 | D1) = ${f(firstBF)} × ${f(secondBF)} = ${f(answer)}.` : ' This is only the evidence contributed by D2 after learning from D1.'} Conditional independence given θ does not make the two batches marginally independent when θ is uncertain.`,
+    source: book('13, 15, 22'),
+  };
+}
+
 function bayes(rng) {
+  if (rng() < 0.25) return generalLaw(rng, true);
   const ws = rng() < 1 / 3 ? [0.2, 0.3, 0.5] : weights(rng);
   const models = ws.map((weight, i) => ({ name: `Machine ${String.fromCharCode(65 + i)}`, type: 'fixed', weight, p: rate(rng) }));
   const observation = pick(rng, ['success', 'failure', 'two-successes', 'mixed']);
@@ -151,10 +256,23 @@ function sequences(rng) {
 }
 
 function beta(rng) {
-  const variant = pick(rng, ['update', 'laplace', 'prior-count', 'posterior-count']);
+  const variant = pick(rng, ['update', 'laplace', 'prior-count', 'posterior-count', 'mean']);
   const a = integer(rng, 1, 6), b = integer(rng, 1, 6);
   const s = integer(rng, 2, 7), fails = variant === 'laplace' && rng() < 0.5 ? 0 : integer(rng, 1, 4);
   const askSuccessParameter = rng() < 0.5;
+  if (variant === 'mean') return {
+    title: 'Estimate the success rate',
+    context: `A plant nursery models a shared germination rate as θ ~ Beta(${a}, ${b}) before observing any seeds. Germination outcomes are independent conditional on θ. You have observed ${s} successes and ${fails} failures.`,
+    prompt: 'What is the posterior mean of the germination rate θ?',
+    answer: (a + s) / (a + b + s + fails),
+    hints: ['Update the beta distribution by adding successes to a and failures to b.', 'The mean of Beta(a′, b′) is a′ / (a′ + b′). Use both prior information and the observations.'],
+    steps: [
+      step('Posterior success parameter a′', a + s, 'a′ = a + successes', `${a} + ${s} = ${a + s}`, 'number'),
+      step('Posterior failure parameter b′', b + fails, 'b′ = b + failures', `${b} + ${fails} = ${b + fails}`, 'number'),
+    ],
+    explanation: `The posterior is Beta(${a + s}, ${b + fails}). Its mean is E(θ | data) = (${a} + ${s}) / (${a} + ${b} + ${s} + ${fails}) = ${f((a + s) / (a + b + s + fails))}. This is an estimate of the underlying rate. In this Bernoulli model it also equals the probability of success on the next trial; it is not the probability that θ equals this exact value.`,
+    source: book('8, 9'),
+  };
   if (variant === 'update') return {
     title: 'Update a beta distribution', context: `A plant nursery models the germination rate as θ ~ Beta(${a}, ${b}). Seeds germinate independently conditional on the same θ.`,
     prompt: askSuccessParameter ? `${fails} of ${s + fails} seeds fail to germinate. What is the updated first parameter a′ in Beta(a′, b′)?` : `${s} of ${s + fails} seeds germinate. What is the updated second parameter b′ in Beta(a′, b′)?`, answer: askSuccessParameter ? a + s : b + fails, unit: 'number',
@@ -210,7 +328,37 @@ function mixtures(rng) {
   };
 }
 
+function forecasterPrediction(rng) {
+  const number = pick(rng, [2, 3]);
+  const ws = number === 2 ? weights(rng) : pick(rng, [[0.2, 0.3, 0.5], [0.25, 0.5, 0.25], [0.4, 0.4, 0.2]]);
+  const priors = [[1, 1], [2, 5], [5, 2], [4, 4], [2, 2], [1, 4], [4, 1], [6, 3]];
+  const models = ws.map((weight, i) => {
+    const [a, b] = priors.splice(integer(rng, 0, priors.length - 1), 1)[0];
+    return { name: `Forecaster ${String.fromCharCode(65 + i)}`, type: 'beta', weight, a, b };
+  });
+  const s = integer(rng, 1, 4), fails = integer(rng, 0, 3);
+  const post = updateModels(models, s, fails);
+  const predictions = post.map(m => m.a / (m.a + m.b));
+  const answer = post.reduce((total, m, i) => total + m.weight * predictions[i], 0);
+  return {
+    title: 'Learn from several beta forecasters',
+    context: `These forecasters are competing models of one shared success rate θ. Trials are independent conditional on θ. The table gives their priors before any data. You observe an ordered sequence with ${s} successes and ${fails} failures: (${[...Array(s).fill('S'), ...Array(fails).fill('F')].join(', ')}), where S means success and F means failure.`,
+    table: modelTable(models),
+    prompt: 'After updating all forecasters, what is the model-averaged probability that the next trial succeeds?',
+    answer,
+    hints: ['There are two updates: update each beta distribution, and update the probability of each forecaster using how well it predicted the observed sequence.', 'For each forecaster, multiply its posterior model probability by its updated beta mean. Add these contributions; do not use the original model weights or choose only the best forecaster.'],
+    steps: [
+      ...modelLikelihoodSteps(models, s, fails),
+      ...post.map((m, i) => step(`Posterior probability of ${m.name}`, m.weight, 'P(model | data) = P(model)P(data | model) / P(data)', `${posteriorWorking(models, s, fails, i)} = ${f(m.weight)}`)),
+      ...post.map((m, i) => step(`Next-success probability within ${m.name}`, predictions[i], 'P(next success | model, data) = (a + s) / (a + b + s + f)', `${m.a} / (${m.a} + ${m.b}) = ${f(predictions[i])}`)),
+    ],
+    explanation: `${post.map(m => `${m.name} has posterior probability ${f(m.weight)} and updates to Beta(${m.a}, ${m.b})`).join('; ')}. P(next success | data) = ${mixtureWorking(post, predictions)} = ${f(answer)}. The model probabilities describe uncertainty about which forecaster to use; each beta distribution describes uncertainty about θ within that model. Update both before averaging.`,
+    source: book('12, 13'),
+  };
+}
+
 function prediction(rng) {
+  if (rng() < 1 / 3) return forecasterPrediction(rng);
   const variant = pick(rng, ['next', 'joint', 'count']);
   const uncertain = rng() < 0.5;
   const ws = weights(rng);
@@ -234,7 +382,9 @@ function prediction(rng) {
 }
 
 function bayesFactors(rng) {
-  const variant = pick(rng, ['reciprocal', 'transitivity', 'both', 'odds', 'marginal', 'forecasters']);
+  const variant = pick(rng, ['reciprocal', 'transitivity', 'both', 'odds', 'marginal', 'forecasters', 'law', 'sequential', 'sequential-total']);
+  if (variant === 'law') return generalLaw(rng, false);
+  if (variant === 'sequential' || variant === 'sequential-total') return sequentialEvidence(rng, variant === 'sequential-total');
   if (variant === 'reciprocal' || variant === 'transitivity') {
     const first = integer(rng, 2, 8), second = integer(rng, 2, 6), reciprocal = variant === 'reciprocal';
     return {

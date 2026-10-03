@@ -189,3 +189,16 @@ test('small-count fallback recovers a representable beta-binomial probability af
   assert.ok(answer > 0);
   assert.ok(Math.abs(answer / 2e-310 - 1) < 1e-10);
 });
+
+test('beta counts retain relative accuracy when a sequence is subnormal before counting', () => {
+  // For Beta(epsilon, epsilon), an interior count has probability
+  // epsilon*n/[2*k*(n-k)] + O(epsilon^2). At these epsilon values the omitted
+  // term is far below representable precision. A direct sequence product can
+  // be subnormal or zero even though multiplying by C(n,k) is representable.
+  for (const epsilon of [1e-285, 1e-288, 1e-290, 1e-292, 1e-308]) {
+    const actual = betaCount(epsilon, epsilon, 100, 50);
+    const expected = epsilon / 50;
+    assert.ok(actual > 0, `${epsilon}: positive interior probability`);
+    assert.ok(Math.abs(actual / expected - 1) < 1e-10, `${epsilon}: ${actual} versus ${expected}`);
+  }
+});

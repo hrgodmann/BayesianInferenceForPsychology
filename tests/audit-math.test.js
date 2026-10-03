@@ -58,7 +58,38 @@ function posterior(ms, s, f) {
 const marginal = (ms, s, f) => sum(ms.map(m => m.weight.mul(likelihood(m, s, f))));
 const pair = (text, expression) => text.match(expression).slice(1).map(Number);
 function reference(q) {
+  if (q.title === 'Posterior probability of a general law' || q.title === 'Evidence for a general law') {
+    const [s, f] = pair(q.context, /sequence D with (\d+) successes and (\d+) failures?/);
+    const [a, b] = pair(q.table.rows[1].at(-1), /Beta\((\d+), (\d+)\)/);
+    const law = R(f ? 0 : 1), beta = likelihood({ a, b }, s, f), bf = law.div(beta);
+    if (q.skillId === 'bayes-factors') return [bf, [law, beta]];
+    const w = R(q.table.rows[0][1]), odds = w.div(R(1).sub(w)).mul(bf);
+    return [odds.div(R(1).add(odds)), [law, beta, bf, odds]];
+  }
+  if (q.title === 'Evidence from a second batch' || q.title === 'Combine evidence across two batches') {
+    const counts = name => {
+      const tokens = q.context.match(new RegExp(`${name} = \\(([^)]+)\\)`))[1].split(', ');
+      return [tokens.filter(t => t === 'S').length, tokens.filter(t => t === 'F').length];
+    };
+    const [s1, f1] = counts('D1'), [s2, f2] = counts('D2');
+    const ms = q.table.rows.map(([, prior]) => { const [a, b] = pair(prior, /Beta\((\d+), (\d+)\)/); return { a, b }; });
+    const first = ms.map(m => likelihood(m, s1, f1));
+    const joint = ms.map(m => likelihood(m, s1 + s2, f1 + f2));
+    const second = joint.map((v, i) => v.div(first[i]));
+    const firstBF = first[0].div(first[1]), secondBF = second[0].div(second[1]);
+    assert.equal(firstBF.mul(secondBF).fraction(), joint[0].div(joint[1]).fraction());
+    return q.title.startsWith('Combine') ? [joint[0].div(joint[1]), [firstBF, ...second]] : [secondBF, second];
+  }
   if (q.skillId === 'probability') {
+    if (q.title === 'Condition on a group') {
+      const [[, both, artOnly], [, musicOnly]] = q.table.rows;
+      const denominator = R(both).add(q.prompt.includes('visitor attended music,') ? musicOnly : artOnly);
+      return [R(both).div(denominator), [denominator]];
+    }
+    if (q.title === 'Allow for overlapping events') {
+      const [a, b, overlap] = q.table.rows.map(row => R(row[1]));
+      return [a.add(b).sub(overlap), [a.add(b)]];
+    }
     const ws = q.table.rows.map(row => R(row[1]));
     const backwards = q.table.rows[0][2] === '?';
     if (backwards) {
@@ -98,6 +129,7 @@ function reference(q) {
     }
     const history = q.context.match(/observed (\d+) successes and (\d+) failures/);
     const aa = a + (history ? +history[1] : 0), bb = b + (history ? +history[2] : 0);
+    if (q.title === 'Estimate the success rate') return [R(aa).div(aa + bb), [R(aa), R(bb)]];
     const [k, n] = pair(q.prompt, /exactly (\d+) successes in the next (\d+)/), c = combination(n, k);
     const seq = likelihood({ a: aa, b: bb }, k, n - k);
     return [seq.mul(c), history ? [R(aa), R(bb), c] : [c, seq]];
@@ -109,6 +141,9 @@ function reference(q) {
   }
   if (q.skillId === 'prediction') {
     const ms = models(q), [s, f] = pair(q.context, /sequence with (\d+) successes and (\d+) failures/), post = posterior(ms, s, f);
+    if (q.title === 'Learn from several beta forecasters') {
+      return [marginal(post, 1, 0), [...ms.map(m => likelihood(m, s, f)), ...post.map(m => m.weight), ...post.map(m => likelihood(m, 1, 0))]];
+    }
     const count = q.prompt.includes('exactly two'), one = q.prompt.includes('next trial succeeds');
     return [marginal(post, one ? 1 : 2, count ? 1 : 0).mul(count ? 3 : 1), [...ms.map(m => likelihood(m, s, f)), post[0].weight]];
   }
@@ -193,6 +228,13 @@ function verify(q, expected, label) {
   }
   const wrong = (Number(expected.rounded(q.decimals)) + 10 ** -q.decimals).toFixed(q.decimals);
   assert.notEqual(gradeAnswer(q, wrong).correct, true, `${label}: adjacent rounded answer rejected`);
+  const lowerWrong = (Number(expected.rounded(q.decimals)) - 10 ** -q.decimals).toFixed(q.decimals);
+  assert.notEqual(gradeAnswer(q, lowerWrong).correct, true, `${label}: lower adjacent rounded answer rejected`);
+  assert.equal(gradeAnswer(q, expected.rounded(q.decimals).replace('.', ',')).correct, true, `${label}: decimal comma answer accepted`);
+  if (q.unit === 'probability') {
+    assert.equal(gradeAnswer(q, `${expected.mul(100).fraction()}%`).correct, true, `${label}: exact percentage fraction accepted`);
+  }
+
 }
 function verifyQuestion(q, expected) {
   verify(q, expected[0], q.id);
@@ -237,9 +279,16 @@ test('beta-binomial rounding agrees with exact factorial ratios throughout gener
 });
 
 
-test('known rounding-boundary seeds accept exact fractions and half-up answers', () => {
-  for (const [seed, fraction, rounded] of [[117, '105/8', '13.13'], [4581, '49/40', '1.23'], [6638, '25/8', '3.13']]) {
-    const q = generateQuestion('bayes-factors', seed);
+test('known rounding-boundary beta comparisons accept exact fractions and half-up answers', async () => {
+  const { betaCount } = await import('../site/math.js');
+  // These inputs exposed failures at v4 seeds117,4581,6638. Preserve the
+  // mathematical cases independently of future additions to the generator.
+  for (const [best, worst, n, k, fraction, rounded] of [
+    [[1, 3], [4, 1], 6, 1, '105/8', '13.13'],
+    [[6, 2], [3, 4], 3, 2, '49/40', '1.23'],
+    [[4, 3], [1, 4], 3, 2, '25/8', '3.13'],
+  ]) {
+    const q = { answer: betaCount(...best, n, k) / betaCount(...worst, n, k), decimals: 2, unit: 'ratio' };
     assert.equal(formatAnswer(q), rounded);
     assert.equal(gradeAnswer(q, fraction).correct, true);
     assert.equal(gradeAnswer(q, rounded).correct, true);
@@ -270,5 +319,27 @@ test('every possible beta forecaster pair rounds its evidence ratio correctly', 
       verify({ answer: first.actual / second.actual, decimals: 2, unit: 'ratio' }, exact,
         `Beta(${first.a},${first.b}) vs Beta(${second.a},${second.b}), ${k}/${n}`);
     }
+  }
+});
+
+
+test('scattered full-width uint32 seeds preserve exact answers, workings, and grading', () => {
+  const count = Number(process.env.BAYESVILLE_AUDIT_SEEDS || 2500);
+  const seeds = new Set([0, 0xffffffff]);
+  for (let bit = 0; bit < 32; bit++) for (const offset of [-1, 0, 1]) {
+    const seed = 2 ** bit + offset;
+    if (seed >= 0 && seed <= 0xffffffff) seeds.add(seed);
+  }
+  // An odd multiplicative permutation distributes consecutive indices across
+  // the full uint32 domain; it does not reuse the generator's PRNG algorithm.
+  for (let i = 1; i <= count; i++) seeds.add(Math.imul(i, 0x9e3779b1) >>> 0);
+  assert.ok([...seeds].some(seed => seed > 0x80000000));
+  for (const seed of seeds) {
+    for (const skill of skills) {
+      const q = generateQuestion(skill.id, seed);
+      verifyQuestion(q, reference(q));
+    }
+    const exam = generateExam(seed), expected = examReference(exam);
+    exam.forEach((q, i) => verifyQuestion(q, expected[i]));
   }
 });
