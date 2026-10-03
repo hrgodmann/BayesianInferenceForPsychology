@@ -1,127 +1,119 @@
-export const STORAGE_KEY = 'bayesville.progress.v1';
-export const SESSION_KEY = 'bayesville.session.v1';
-export const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
+import { skills, difficulties, generateQuestion, generateExam, GENERATOR_VERSION } from './questions.js';
+
+export const STORAGE_KEY = 'bayesville.calculations.progress.v2';
+export const SESSION_KEY = 'bayesville.calculations.session.v2';
+const skillIds = new Set(skills.map(s => s.id));
+const levels = new Set(difficulties.map(d => d.id));
+const methods = new Set(['checked', 'self', 'revealed', 'skipped']);
+const examCache = new Map();
+function examFor(seed, difficulty) {
+  const key = `${difficulty}:${seed}`;
+  if (!examCache.has(key)) {
+    if (examCache.size >= 100) examCache.delete(examCache.keys().next().value);
+    examCache.set(key, generateExam(seed, difficulty));
+  }
+  return examCache.get(key);
+}
+export const roundTo = (n, places = 2) => Math.round((n + Number.EPSILON * Math.max(1, Math.abs(n))) * 10 ** places) / 10 ** places;
 
 export function parseNumeric(raw, unit = 'probability') {
   let text = String(raw ?? '').trim();
-  if (!text) return { error: 'Enter an answer first, or reveal the solution below.' };
+  if (!text) return { error: 'Enter an answer first, or show the solution.' };
   if (text.includes(',') && !text.includes('.') && (text.match(/,/g) || []).length === 1) text = text.replace(',', '.');
   const percent = text.endsWith('%');
-  if (percent && unit !== 'probability') return { error: 'Enter a number, without a percent sign, for this question.' };
+  if (percent && unit !== 'probability') return { error: 'Enter a number without a percent sign for this question.' };
   if (percent) text = text.slice(0, -1).trim();
-  const number = '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
+  const pattern = '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
   let value;
-  if (new RegExp(`^${number}$`).test(text)) value = Number(text);
+  if (new RegExp(`^${pattern}$`).test(text)) value = Number(text);
   else {
-    const fraction = text.match(new RegExp(`^(${number})\\s*/\\s*(${number})$`));
+    const fraction = text.match(new RegExp(`^(${pattern})\\s*/\\s*(${pattern})$`));
     if (fraction && Number(fraction[2]) !== 0) value = Number(fraction[1]) / Number(fraction[2]);
   }
-  if (!Number.isFinite(value)) return { error: 'Use a number such as 0.42. Fractions such as 2/3 also work.' };
+  if (!Number.isFinite(value)) return { error: 'Use a number such as 0.42, or a fraction such as 2/3.' };
   if (percent) value /= 100;
-  if (unit === 'probability' && (value < 0 || value > 1)) return { error: 'A probability must be between 0 and 1. You can also enter a percentage, such as 42%.' };
-  if (value < 0) return { error: 'This question needs a non-negative answer.' };
+  if (value < 0) return { error: 'Enter a non-negative number.' };
+  if (unit === 'probability' && value > 1) return { error: 'A probability must be between 0 and 1. Percentages such as 42% also work.' };
   return { value };
 }
 
 export function gradeAnswer(question, raw) {
-  if (question.type === 'tf') {
-    if (typeof raw !== 'boolean') return { error: 'Choose True or False first.' };
-    return { correct: raw === question.answer, value: raw };
-  }
   const parsed = parseNumeric(raw, question.unit || 'probability');
   if (parsed.error) return parsed;
-  return { correct: round2(parsed.value) === round2(question.answer), value: parsed.value };
+  return { value: parsed.value, correct: roundTo(parsed.value, question.decimals ?? 2) === roundTo(question.answer, question.decimals ?? 2) };
 }
-
-export function formatAnswer(question) {
-  if (question.type === 'tf') return question.answer ? 'True' : 'False';
-  const unit = question.unit && !['probability', 'odds', 'ratio', 'number'].includes(question.unit) ? ` ${question.unit}` : '';
-  return `${round2(question.answer).toFixed(2)}${unit}`;
+export const formatAnswer = q => roundTo(q.answer, q.decimals ?? 2).toFixed(q.decimals ?? 2);
+export function normalizeRef(raw) {
+  if (!raw || raw.version !== GENERATOR_VERSION || !Number.isInteger(raw.seed) || raw.seed < 0 || raw.seed > 0xffffffff || !levels.has(raw.difficulty)) return null;
+  if (raw.skillId === 'exam') {
+    if (!Number.isInteger(raw.part) || raw.part < 0 || raw.part >= examFor(raw.seed, raw.difficulty).length) return null;
+  } else if (!skillIds.has(raw.skillId)) return null;
+  return { version: GENERATOR_VERSION, skillId: raw.skillId, difficulty: raw.difficulty, seed: raw.seed, ...(raw.skillId === 'exam' ? { part: raw.part } : {}) };
 }
-
-export function emptyProgress() { return { version: 1, attempts: [], bookmarks: [] }; }
-
-export function normalizeProgress(raw, validIds) {
-  if (!raw || raw.version !== 1) return emptyProgress();
-  const valid = new Set(validIds);
-  const attempts = Array.isArray(raw.attempts) ? raw.attempts.filter(a =>
-    a && typeof a.id === 'string' && valid.has(a.questionId) &&
-    [true, false, null].includes(a.correct) && typeof a.at === 'string' && Number.isFinite(Date.parse(a.at))
-  ).slice(-5000).map(a => ({
-    id: a.id, questionId: a.questionId, correct: a.correct,
-    method: ['checked', 'self', 'skipped'].includes(a.method) ? a.method : 'checked',
-    hinted: Boolean(a.hinted), at: a.at
-  })) : [];
-  return { version: 1, attempts, bookmarks: Array.isArray(raw.bookmarks) ? [...new Set(raw.bookmarks.filter(id => valid.has(id)))] : [] };
+export const refKey = ref => `${ref.version}:${ref.skillId}:${ref.difficulty}:${ref.seed}${ref.skillId === 'exam' ? `:${ref.part}` : ''}`;
+export const questionFor = ref => ref.skillId === 'exam' ? examFor(ref.seed, ref.difficulty)[ref.part] : generateQuestion(ref.skillId, ref.seed, ref.difficulty);
+export const makeRef = (skillId, seed, difficulty = 'practice', part) => ({ version: GENERATOR_VERSION, skillId, seed: seed >>> 0, difficulty, ...(part !== undefined ? { part } : {}) });
+export function appendEndlessRef(session, ref) {
+  if (session.mode !== 'skill' || session.length !== 0) throw new Error('Only endless skill sessions can grow.');
+  const refs = [...session.refs, ref];
+  const overflow = Math.max(0, refs.length - 5000);
+  if (!overflow) return { ...session, refs };
+  const kept = refs.slice(overflow);
+  const keys = new Set(kept.map(refKey));
+  return { ...session, refs: kept, index: session.index - overflow, offset: (session.offset || 0) + overflow,
+    answers: session.answers.filter(a => keys.has(a.key)) };
 }
-
+export function emptyProgress() { return { version: GENERATOR_VERSION, attempts: [], bookmarks: [] }; }
+export function normalizeProgress(raw) {
+  if (!raw || raw.version !== GENERATOR_VERSION) return emptyProgress();
+  const attempts = [];
+  if (Array.isArray(raw.attempts)) for (const a of raw.attempts.slice(-5000)) {
+    const ref = normalizeRef(a?.ref);
+    if (!ref || typeof a.id !== 'string' || a.id.length > 150 || ![true, false, null].includes(a.correct) || !methods.has(a.method) || typeof a.at !== 'string' || !Number.isFinite(Date.parse(a.at))) continue;
+    attempts.push({ id: a.id, ref, correct: a.correct, method: a.method, hinted: Boolean(a.hinted), at: a.at });
+  }
+  const refs = new Map();
+  if (Array.isArray(raw.bookmarks)) for (const b of raw.bookmarks.slice(-500)) { const ref = normalizeRef(b); if (ref) refs.set(refKey(ref), ref); }
+  return { version: GENERATOR_VERSION, attempts: [...new Map(attempts.map(a => [a.id, a])).values()], bookmarks: [...refs.values()] };
+}
+export function recordAttempt(progress, attempt) {
+  return { ...progress, attempts: [...progress.attempts.filter(a => a.id !== attempt.id), attempt].slice(-5000) };
+}
 export function latestAttempts(progress) {
   const latest = new Map();
-  for (const attempt of progress.attempts) {
-    latest.delete(attempt.questionId);
-    latest.set(attempt.questionId, attempt);
-  }
+  for (const attempt of progress.attempts) { latest.delete(refKey(attempt.ref)); latest.set(refKey(attempt.ref), attempt); }
   return latest;
 }
-
-export function recordAttempt(progress, attempt) {
-  const attempts = progress.attempts.filter(a => a.id !== attempt.id);
-  return { ...progress, attempts: [...attempts, attempt].slice(-5000) };
+export function reviewRefs(progress) { return [...latestAttempts(progress).values()].filter(a => a.correct !== true).reverse().map(a => a.ref); }
+export function summarize(progress, skillId) {
+  const attempts = progress.attempts.filter(a => !skillId || a.ref.skillId === skillId);
+  const checked = attempts.filter(a => a.method === 'checked');
+  return { attempts: attempts.length, checked: checked.length, correct: checked.filter(a => a.correct).length,
+    self: attempts.filter(a => a.method === 'self').length, review: reviewRefs(progress).filter(r => !skillId || r.skillId === skillId).length };
 }
-
-export function selectQuestions(bank, options = {}, progress = emptyProgress()) {
-  const latest = latestAttempts(progress);
-  return bank.filter(q =>
-    (!options.chapterId || options.chapterId === 'all' || q.chapterId === options.chapterId) &&
-    (!options.type || options.type === 'mixed' || q.type === options.type) &&
-    (options.pool !== 'review' || (latest.has(q.id) && latest.get(q.id).correct !== true)) &&
-    (options.pool !== 'bookmarks' || progress.bookmarks.includes(q.id))
-  );
-}
-
-export function shuffle(items, random = Math.random) {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
+export function restoreSession(raw) {
+  if (!raw || raw.version !== GENERATOR_VERSION || typeof raw.id !== 'string' || raw.id.length > 100 || !['skill', 'exam', 'review'].includes(raw.mode) || !Array.isArray(raw.refs) || !raw.refs.length || raw.refs.length > 5000) return null;
+  const refs = raw.refs.map(normalizeRef);
+  if (refs.some(r => !r) || new Set(refs.map(refKey)).size !== refs.length || !Number.isInteger(raw.index) || raw.index < 0 || raw.index >= refs.length || ![0, 5, 10].includes(raw.length) && raw.length !== refs.length) return null;
+  if (!levels.has(raw.difficulty) || (raw.mode === 'skill' && !skillIds.has(raw.skillId))) return null;
+  if (raw.mode === 'skill' && refs.some(r => r.skillId !== raw.skillId || r.difficulty !== raw.difficulty)) return null;
+  if (raw.mode === 'skill' && (raw.length !== 0 && (raw.length !== refs.length || ![5, 10].includes(raw.length)))) return null;
+  if (raw.mode === 'exam' && (raw.skillId !== 'exam' || raw.length !== refs.length || refs.length !== examFor(refs[0].seed, raw.difficulty).length || refs.some((r,i) => r.skillId !== 'exam' || r.seed !== refs[0].seed || r.difficulty !== raw.difficulty || r.part !== i))) return null;
+  if (raw.mode === 'review' && (raw.skillId !== 'review' || raw.length !== refs.length)) return null;
+  const allowed = new Set(refs.slice(0, raw.index + 1).map(refKey));
+  const answers = new Map();
+  if (Array.isArray(raw.answers)) for (const a of raw.answers) {
+    if (a && allowed.has(a.key) && [true, false, null].includes(a.correct) && methods.has(a.method)) answers.set(a.key, { key: a.key, correct: a.correct, method: a.method, raw: typeof a.raw === 'string' ? a.raw.slice(0, 100) : '', hinted: Boolean(a.hinted) });
   }
-  return copy;
-}
-
-export function summarize(progress, ids) {
-  const valid = new Set(ids);
-  const latest = [...latestAttempts(progress).values()].filter(a => valid.has(a.questionId));
-  return {
-    practiced: latest.length,
-    understood: latest.filter(a => a.correct === true).length,
-    review: latest.filter(a => a.correct !== true).length,
-    checked: progress.attempts.filter(a => valid.has(a.questionId) && a.method === 'checked').length,
-    checkedCorrect: progress.attempts.filter(a => valid.has(a.questionId) && a.method === 'checked' && a.correct === true).length
-  };
-}
-
-export function restoreSession(raw, bank) {
-  const valid = new Set(bank.map(q => q.id));
-  if (!raw || typeof raw.id !== 'string' || !Array.isArray(raw.ids) || !raw.ids.length ||
-    raw.ids.some(id => !valid.has(id)) || new Set(raw.ids).size !== raw.ids.length ||
-    !Number.isInteger(raw.index) || raw.index < 0 || raw.index >= raw.ids.length) return null;
-  const sessionIds = new Set(raw.ids.slice(0, raw.index + 1));
-  const answerMap = new Map();
-  if (Array.isArray(raw.answers)) raw.answers.forEach(a => {
-    if (!a || !sessionIds.has(a.questionId) || ![true, false, null].includes(a.correct)) return;
-    answerMap.set(a.questionId, { questionId: a.questionId, correct: a.correct, method: ['checked', 'self', 'skipped'].includes(a.method) ? a.method : 'skipped',
-      hinted: Boolean(a.hinted), raw: typeof a.raw === 'boolean' || typeof a.raw === 'string' ? a.raw : '' });
+  const q = questionFor(refs[raw.index]);
+  const steps = q.steps.map((step, i) => {
+    const saved = raw.steps?.[i];
+    const input = typeof saved?.input === 'string' ? saved.input.slice(0, 100) : '';
+    return { input, ...(saved?.checked ? { checked: true, ...gradeAnswer(step, input) } : {}) };
   });
-  const answers = [...answerMap.values()];
-  return {
-    id: raw.id, ids: raw.ids, index: raw.index, answers,
-    chapterId: typeof raw.chapterId === 'string' ? raw.chapterId : 'all',
-    type: ['tf', 'calculation', 'mixed'].includes(raw.type) ? raw.type : 'mixed',
-    pool: ['all', 'review', 'bookmarks'].includes(raw.pool) ? raw.pool : 'all',
-    hint: [0, 1, 2].includes(raw.hint) ? raw.hint : 0,
-    revealed: Boolean(raw.revealed), selection: typeof raw.selection === 'boolean' ? raw.selection : null,
-    input: typeof raw.input === 'string' ? raw.input.slice(0, 100) : '',
-    notes: typeof raw.notes === 'string' ? raw.notes.slice(0, 5000) : '',
-    complete: Boolean(raw.complete)
-  };
+  return { version: GENERATOR_VERSION, id: raw.id, mode: raw.mode, skillId: raw.skillId, difficulty: raw.difficulty,
+    length: raw.length, refs, index: raw.index, answers: [...answers.values()], hint: Number.isInteger(raw.hint) ? Math.max(0, Math.min(raw.hint, q.hints.length)) : 0,
+    offset: Number.isSafeInteger(raw.offset) && raw.offset >= 0 ? raw.offset : 0,
+    input: typeof raw.input === 'string' ? raw.input.slice(0, 100) : '', notes: typeof raw.notes === 'string' ? raw.notes.slice(0, 5000) : '',
+    guided: Boolean(raw.guided), steps, complete: Boolean(raw.complete) };
 }

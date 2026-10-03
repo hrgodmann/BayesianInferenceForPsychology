@@ -1,44 +1,57 @@
 # Bayesville
 
-A friendly practice platform for Bayesian inference students. Choose a chapter, practise true/false or calculation questions, ask for hints, and review short worked explanations.
+Calculation practice for Bayesian Inference for Psychology. The autumn watercolor village opens onto seven skills and linked exam scenarios. Every new session generates fresh numbers; saved questions retain their original numbers.
 
-The initial question bank covers six reading sections: the Synopsis and chapters 1, 2, 3, 5, and 6. Its questions adapt the topics and reasoning in quizzes 1–2, with changed examples, wording, and numerical values. This is a starting practice bank, not a complete textbook assessment.
+## Practice
+
+- **Probability rules:** total probability and missing conditional rates.
+- **Bayes’ rule:** posterior probabilities with two or three explanations, including complementary observations.
+- **Sequences & counts:** ordered sequences, exact binomial counts, and complements.
+- **Learning a proportion:** beta updates, prior and posterior count prediction, and Laplace’s rule of succession.
+- **Combining predictions:** prior mixtures of fixed-rate, beta, and universal-law models.
+- **Predicting observations:** update model weights and parameter distributions, then predict single or joint future outcomes.
+- **Bayes factors & odds:** reciprocal/transitive comparisons, posterior odds, and fixed-versus-beta predictive evidence.
+- **Exam practice:** five linked calculations: identify a source, predict, update with another observation, predict within the beta model, then predict several future observations jointly.
+
+Foundation, Practice, and Challenge change the calculation structure. Skill sessions offer 5 questions, 10 questions, or endless practice. Each question has optional guided numerical steps, hints, working notes, a worked solution, and a course-book reference. Students can check their answer or record a self-assessment after working on paper. These questions practise the skills assessed in the supplied course materials; they are not copies of the original assessment questions.
 
 ## Run locally
 
-Use Node.js 20 or newer. There are no packages to install and no build step.
+Use Node.js 20 or newer. There are no runtime packages to install and no build step.
 
 ```sh
 npm run dev
-```
-
-Open [the local preview](http://127.0.0.1:4173/BayesianInferenceForPsychology/). The server also supports the root URL. It serves only `site/`, uses the same project path as GitHub Pages, and binds to your own computer. Set `PORT` to choose a different port.
-
-```sh
 npm test
 ```
 
-The tests check the question schema, calculation answers, grading, and saved progress. The deployment workflow runs them before publishing. For optional browser checks, start the preview server and run `node tests/browser.mjs` with Playwright available; `BAYESVILLE_PLAYWRIGHT_MODULE` and `BAYESVILLE_CHROMIUM` can point to an existing installation. Browser checks cover the full practice journey, keyboard navigation, and desktop/mobile layouts.
+Open [the local preview](http://127.0.0.1:4173/BayesianInferenceForPsychology/). `PORT` selects a different port. The server binds to the local computer, serves only `site/`, and supports the GitHub Pages project path.
+
+For browser checks, start the preview and run `node tests/browser.mjs` with Playwright available. `BAYESVILLE_PLAYWRIGHT_MODULE` and `BAYESVILLE_CHROMIUM` can point to an existing installation. The browser checks cover practice, grading, guided steps, saved sessions, review, bookmarks, linked exams, storage failure, and desktop/mobile layouts. Screenshots are written to the ignored `.artifacts/` directory.
 
 ## Publish on GitHub Pages
 
-1. Commit the platform files and push them to `main` in `hrgodmann/BayesianInferenceForPsychology`.
-2. In the repository, open **Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**.
-3. Under **Actions**, run **Publish Bayesville**, or push another change to `main`.
-4. Wait for the deployment to succeed. The workflow's environment link shows the published URL.
+1. Commit the platform files and push to `main` in `hrgodmann/BayesianInferenceForPsychology`.
+2. Under **Settings → Pages → Build and deployment**, select **GitHub Actions**.
+3. Run **Publish Bayesville** under Actions, or push a change to `main`.
+4. Wait for a successful deployment at [hrgodmann.github.io/BayesianInferenceForPsychology/](https://hrgodmann.github.io/BayesianInferenceForPsychology/).
 
-The expected address is [hrgodmann.github.io/BayesianInferenceForPsychology/](https://hrgodmann.github.io/BayesianInferenceForPsychology/). Adding these files locally does not make that address live; GitHub must complete the deployment first.
+The workflow runs the unit tests and publishes only `site/`. It excludes the book, original assessments (including `2025/`), syllabus, and instructor notes. These source folders are also ignored by Git. Local edits alone do not update the published site.
 
-The workflow in `.github/workflows/pages.yml` publishes **only `site/`**. It does not publish the book, original quizzes, syllabus, or working notes as part of the website. A public GitHub repository exposes files committed to that repository, so select the files for the initial commit deliberately. The workflow follows [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+## Calculations and generators
 
-## Add or edit practice content
+- `site/math.js` contains binomial/beta predictive probabilities, model updating, and model-averaged prediction. Posterior weights are normalized in log space. Joint predictions integrate a shared unknown rate, rather than substituting its mean.
+- `site/questions.js` exports the skill catalog, difficulty levels, `generateQuestion(skillId, seed, difficulty)`, and `generateExam(seed, difficulty)`. Each question includes a full-precision answer, units, display precision, numerical working steps, hints, and source metadata.
+- `site/engine.js` handles numeric parsing, grading, reproducible question references, progress, and session validation.
+- `site/app.js` renders the interface. All assets use relative paths; the site works under a GitHub Pages repository path.
 
-The browser loads the question bank from `site/questions.js`. Keep question IDs stable so existing progress still refers to the right question. Each question belongs to a chapter and question type, with its answer, hint, and explanation stored alongside the prompt. Copy a nearby example of the same type when adding a question, then run the tests and check the result in the browser.
+A stored reference contains the generator version, skill, seed, difficulty, and (for an exam question) its part number. Changing a generator changes the meaning of old seeds: bump `GENERATOR_VERSION` and the storage namespaces when making incompatible generator changes. Add mathematical regression tests for new exercise families, including source-assessment benchmark calculations with independent expected results.
 
-The site uses plain HTML, CSS, and JavaScript modules. Keep asset links relative so they work beneath the repository path on GitHub Pages. Publishable assets belong inside `site/`.
+Answers accept decimals, decimal commas, fractions, and percentages for probabilities. Final answers are checked after rounding to the precision displayed, with exact halfway values rounded up. Very small probabilities use four decimals. Intermediate calculations keep full precision; guided-step checks do not feed rounded values into later calculations.
 
-The visual theme follows the supplied autumn watercolor reference, used directly as `site/assets/autumn-village.png`. `site/styles.css` contains the core layouts and color tokens; `site/autumn.css` adds the parchment surfaces, serif typography, and responsive artwork placement. Fonts are supplied by the device, with no external font requests.
+## Saved practice
 
-## Student progress
+Calculation progress uses separate version-2 browser storage. Earlier chapter/true-false records are left untouched and do not count toward the new calculation statistics. There are no accounts or backend; progress does not sync across browsers or devices.
 
-Progress is saved in browser storage on the current device. There are no accounts, backend, class roster, or instructor dashboard. Progress does not synchronise across browsers or devices, and clearing browser data removes it. Answers are included in the public question bank because this is a practice tool, not a secure exam platform.
+The most recent 5,000 attempts and up to 500 bookmarks are retained. Endless sessions roll their saved question window after 5,000 questions and continue with fresh numbers. Long summaries show the latest 100 question details. Review sessions use the most recent 100 questions needing review; bookmarks and reviewed questions reproduce their saved numbers. Checked accuracy excludes self-assessments, skipped questions, and viewed solutions. Reset removes calculation progress, bookmarks, and the current calculation session only.
+
+The visual theme retains the supplied artwork in `site/assets/autumn-village.png`. `site/styles.css` and `site/autumn.css` provide the existing paper surfaces and typography; `site/calculations.css` adds the calculation workbook layout. Fonts come from the device, without external font requests.

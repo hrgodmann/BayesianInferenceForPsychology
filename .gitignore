@@ -13,6 +13,7 @@ artifacts/
 # Local course references, instructor notes, and unused source artwork.
 /material/
 /quizzes/
+/2025/
 /syllabus/
 /art/
 /docs/course-material-map.md

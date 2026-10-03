@@ -1,498 +1,337 @@
-// Bayesville starter bank: new practice variants of the skills in Quizzes 1–2.
-// Sources refer to printed pages in the supplied course manuscript.
-// Calculation answers retain their exact JS value; display/check to two decimals.
+import { choose, fixedSequence, betaSequence, betaCount, updateModels, predictModels } from './math.js';
 
-export const chapters = [
-  {
-    id: 'synopsis', number: '00', title: 'The learning loop',
-    bookTitle: 'Synopsis', week: 1, pages: '13–16', icon: 'cycle',
-    description: 'Make predictions, meet the evidence, and update your beliefs.',
-  },
-  {
-    id: '1', number: '01', title: 'Probability as belief',
-    bookTitle: 'Probability Belongs Wholly to the Mind?', week: 1, pages: '31–44', icon: 'mind',
-    description: 'Explore what probability tells us about what we know.',
-  },
-  {
-    id: '2', number: '02', title: 'Two kinds of uncertainty',
-    bookTitle: 'Epistemic and Aleatory Uncertainty', week: 1, pages: '45–55', icon: 'uncertainty',
-    description: 'Separate uncertainty about a process from variation in its outcomes.',
-  },
-  {
-    id: '3', number: '03', title: 'The rules of probability',
-    bookTitle: 'The Rules of Probability', week: 2, pages: '57–81', icon: 'tree',
-    description: 'Follow the branches from prior beliefs to posterior probabilities.',
-  },
-  {
-    id: '5', number: '05', title: 'Measuring belief',
-    bookTitle: 'The Measurement of Probability', week: 2, pages: '91–100', icon: 'measure',
-    description: 'Use urns, dice, and decisions to put uncertainty on a common scale.',
-  },
-  {
-    id: '6', number: '06', title: 'Keeping beliefs coherent',
-    bookTitle: 'Coherence', week: 2, pages: '101–118', icon: 'balance',
-    description: 'Check whether your beliefs fit together under the probability rules.',
-  },
+export const GENERATOR_VERSION = 2;
+export const skills = [
+  { id: 'probability', title: 'Probability rules', description: 'Combine probabilities across groups.', icon: 'tree' },
+  { id: 'bayes', title: 'Bayes’ rule', description: 'Update which explanation is most likely.', icon: 'cycle' },
+  { id: 'sequences', title: 'Sequences & counts', description: 'Calculate ordered outcomes and success counts.', icon: 'measure' },
+  { id: 'beta', title: 'Learning a proportion', description: 'Update beta distributions and predict outcomes.', icon: 'uncertainty' },
+  { id: 'mixtures', title: 'Combining predictions', description: 'Average predictions across competing models.', icon: 'balance' },
+  { id: 'prediction', title: 'Predicting observations', description: 'Use what you have learned to predict what comes next.', icon: 'mind' },
+  { id: 'bayes-factors', title: 'Bayes factors & odds', description: 'Compare predictions and update model odds.', icon: 'balance' },
+];
+export const difficulties = [
+  { id: 'foundation', label: 'Foundation', description: 'One main calculation, with simpler models.' },
+  { id: 'practice', label: 'Practice', description: 'Combine calculations at quiz level.' },
+  { id: 'challenge', label: 'Challenge', description: 'Work backwards or combine more models and observations.' },
 ];
 
-const strategyTable = {
-  headers: ['Strategy', 'P(strategy)', 'P(correct | strategy)'],
-  rows: [
-    ['Retrieval practice (R)', '0.40', '0.80'],
-    ['Rereading (S)', '0.35', '0.60'],
-    ['Guessing (G)', '0.25', '0.20'],
-  ],
+// Mulberry32: a saved seed reproduces a question without storing its content.
+function random(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6D2B79F5) >>> 0;
+    let x = Math.imul(state ^ (state >>> 15), state | 1);
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const pick = (rng, items) => items[Math.floor(rng() * items.length)];
+const integer = (rng, lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
+const f = value => Number(value.toPrecision(7)).toString();
+const precision = value => value > 0 && value < 0.01 ? 4 : 2;
+const step = (prompt, answer, formula, working, unit = 'probability') => ({
+  prompt, answer, unit, decimals: precision(answer), formula, working,
+});
+const book = chapters => ({ label: `Course book · ${chapters.includes(',') ? 'Chapters' : 'Chapter'} ${chapters}`, chapters });
+const weights = rng => {
+  const w = pick(rng, [0.25, 0.4, 0.5, 0.6, 0.75]);
+  return [w, 1 - w];
 };
+const rate = rng => integer(rng, 2, 8) / 10;
+const modelText = m => m.type === 'fixed' ? `Fixed success probability ${f(m.p)}` : `θ ~ Beta(${m.a}, ${m.b})`;
+const modelTable = models => ({ headers: ['Model', 'Prior probability', 'Success rate'], rows: models.map(m => [m.name, f(m.weight), modelText(m)]) });
+const likelihood = (model, s, fails) => model.type === 'fixed' ? fixedSequence(model.p, s, fails) : betaSequence(model.a, model.b, s, fails);
+const marginal = (models, s, fails) => models.reduce((total, m) => total + m.weight * likelihood(m, s, fails), 0);
+function betaProduct(a, b, successes, failures) {
+  const factors = [];
+  for (let i = 0; i < successes; i++) factors.push(`(${a + i}/${a + b + i})`);
+  for (let j = 0; j < failures; j++) factors.push(`(${b + j}/${a + b + successes + j})`);
+  return factors.join(' × ') || '1';
+}
+function sequenceWorking(model, s, fails) {
+  return model.type === 'fixed'
+    ? `${f(model.p)}^${s} × (1 − ${f(model.p)})^${fails}`
+    : betaProduct(model.a, model.b, s, fails);
+}
+function mixtureWorking(models, values) {
+  return models.map((m, i) => `${f(m.weight)} × ${f(values[i])}`).join(' + ');
+}
+function posteriorWorking(models, s, fails, index = 0) {
+  const denominator = marginal(models, s, fails);
+  return `${f(models[index].weight)} × ${f(likelihood(models[index], s, fails))} / ${f(denominator)}`;
+}
+function modelLikelihoodSteps(models, s, fails) {
+  return models.map(m => step(`Probability of the observed ordered sequence under ${m.name}`, likelihood(m, s, fails),
+    m.type === 'fixed' ? 'P(sequence | θ) = θ^s(1 − θ)^f' : 'P(sequence | model) = B(a + s, b + f) / B(a, b)',
+    `${sequenceWorking(m, s, fails)} = ${f(likelihood(m, s, fails))}`));
+}
+function finish(skillId, seed, difficulty, item, suffix = '') {
+  return {
+    id: `v${GENERATOR_VERSION}-${skillId}-${seed >>> 0}-${difficulty}${suffix}`, seed: seed >>> 0,
+    skillId, difficulty, unit: 'probability', decimals: precision(item.answer), ...item,
+  };
+}
 
-export const questions = [
-  {
-    id: 'synopsis-tf-01', chapterId: 'synopsis', type: 'tf',
-    title: 'From an idea to a prediction',
-    prompt: 'A researcher starts with a hypothesis about attention and works out which observations it predicts. This is the deductive part of the Bayesian learning cycle.',
-    answer: true,
-    hints: ['Which direction does the reasoning travel: from a hypothesis to data, or from data to beliefs?', 'Deduction derives a prediction from an assumed explanation.'],
-    explanation: 'Deduction runs from a hypothesis and its assumptions to predicted observations. The later step of revising the hypothesis’s plausibility in light of observations is induction.',
-    source: { chapter: 'Synopsis', pages: '13–15' }, difficulty: 'Foundation', concept: 'Deduction',
-  },
-  {
-    id: 'synopsis-tf-02', chapterId: 'synopsis', type: 'tf',
-    title: 'Learning from a surprise',
-    prompt: 'After comparing how well two explanations predicted an observation, a student revises their relative plausibilities. This revision is the deductive step of the learning cycle.',
-    answer: false,
-    hints: ['The predictions have already been made. What is changing now?', 'Moving from observed predictive success to revised beliefs is induction.'],
-    explanation: 'This is induction: the observation changes how plausible the competing explanations are. Deduction was the earlier step in which the explanations generated predictions.',
-    source: { chapter: 'Synopsis', pages: '13–15' }, difficulty: 'Foundation', concept: 'Induction',
-  },
-  {
-    id: 'synopsis-tf-03', chapterId: 'synopsis', type: 'tf',
-    title: 'Another day, another observation',
-    prompt: 'When the same model is used for the next observation, today’s posterior beliefs can become tomorrow’s prior beliefs.',
-    answer: true,
-    hints: ['A prior describes what is known before the next observation.', 'The previous observation is already included in the current posterior.'],
-    explanation: 'Bayesian learning is a continuing cycle. The posterior summarizes the evidence learned so far and becomes the prior for the next update, using the appropriate predictions conditional on what is already known.',
-    source: { chapter: 'Synopsis', pages: '14–16' }, difficulty: 'Foundation', concept: 'Sequential learning',
-  },
-  {
-    id: 'synopsis-tf-04', chapterId: 'synopsis', type: 'tf',
-    title: 'A fresh start?',
-    prompt: 'Each new observation requires a Bayesian learner to discard all earlier information and start again with equal beliefs in every explanation.',
-    answer: false,
-    hints: ['What is the purpose of carrying a posterior into the next cycle?', 'Updating combines existing information with new evidence.'],
-    explanation: 'Learning builds on what is already known. Equal prior beliefs are a possible starting assumption in a particular problem, not a rule that must be reinstated after every observation.',
-    source: { chapter: 'Synopsis', pages: '13–16' }, difficulty: 'Foundation', concept: 'Prior information',
-  },
-  {
-    id: 'synopsis-tf-05', chapterId: 'synopsis', type: 'tf',
-    title: 'A tie in prediction',
-    prompt: 'Two explanations assign the same nonzero probability to the observation that occurs. That observation alone does not change their relative plausibility.',
-    answer: true,
-    hints: ['Learning compares the explanations’ predictive performance.', 'If both make the observed result equally probable, neither wins this comparison.'],
-    explanation: 'Belief changes depend on relative predictive success. An observation predicted equally well by both explanations leaves their relative odds unchanged; it does not necessarily make their final probabilities equal.',
-    source: { chapter: 'Synopsis', pages: '13–16' }, difficulty: 'Apply', concept: 'Relative predictive success',
-  },
-  {
-    id: 'synopsis-tf-06', chapterId: 'synopsis', type: 'tf',
-    title: 'The purpose of updating',
-    prompt: 'The Bayesian learning cycle is a method for preserving the initial favourite, regardless of which explanation predicts the observations better.',
-    answer: false,
-    hints: ['Can evidence count against a currently favoured explanation?', 'Predictions are checked against observations so that beliefs can change.'],
-    explanation: 'The cycle evaluates and revises existing beliefs. An initially favoured explanation can lose credibility when its rivals predict the observations better. A prior matters, but it does not replace the evidence.',
-    source: { chapter: 'Synopsis', pages: '13–16' }, difficulty: 'Foundation', concept: 'Belief revision',
-  },
-  {
-    id: 'ch1-tf-01', chapterId: '1', type: 'tf',
-    title: 'One envelope, two observers',
-    prompt: 'Alex has seen a clue about the card inside a sealed envelope; Sam has not. In the course’s Bayesian framework, they may reasonably give different probabilities that the card is red.',
-    answer: true,
-    hints: ['What differs between Alex and Sam: the card or their information?', 'Probability expresses an observer’s uncertainty given what that observer knows.'],
-    explanation: 'The card is the same, but the observers have different information. Their probabilities can therefore differ without either assignment being internally inconsistent.',
-    source: { chapter: '1', pages: '31–34' }, difficulty: 'Foundation', concept: 'Observer dependence',
-  },
-  {
-    id: 'ch1-tf-02', chapterId: '1', type: 'tf',
-    title: 'Yesterday’s hidden result',
-    prompt: 'A lottery was drawn yesterday, but Noor has not seen the result. Because the draw is in the past, Noor must assign probability either 0 or 1 to her ticket having won.',
-    answer: false,
-    hints: ['Does an event’s having occurred mean that its result is known to Noor?', 'Distinguish the truth of a proposition from an observer’s knowledge of its truth.'],
-    explanation: 'A past event can remain uncertain to an observer. Noor can assign a probability between 0 and 1 because she does not know the outcome, even though the draw itself has already happened.',
-    source: { chapter: '1', pages: '31–34' }, difficulty: 'Foundation', concept: 'Uncertainty about the past',
-  },
-  {
-    id: 'ch1-tf-03', chapterId: '1', type: 'tf',
-    title: 'Determined does not mean known',
-    prompt: 'If a machine’s next output is fully determined by its current state, every human observer must be able to predict that output with certainty.',
-    answer: false,
-    hints: ['A determined output may depend on a state the observer does not know.', 'Determinism concerns how events occur; predictability also depends on available information.'],
-    explanation: 'A process can be deterministic while its outcome remains unknown to an observer. Missing information about the machine’s state can make prediction uncertain.',
-    source: { chapter: '1', pages: '32–33' }, difficulty: 'Foundation', concept: 'Determinism and predictability',
-  },
-  {
-    id: 'ch1-tf-04', chapterId: '1', type: 'tf',
-    title: 'At the endpoints',
-    prompt: 'Bayesian probability permits the values 0 and 1, for example when representing a logical impossibility or certainty.',
-    answer: true,
-    hints: ['Are the endpoints excluded from the mathematical probability scale?', 'Caution about dogmatic empirical beliefs is different from a mathematical ban on certainty.'],
-    explanation: 'Probabilities range from 0 to 1, including the endpoints. Whether certainty is a sensible assignment to an empirical claim is a separate question from whether the values are allowed.',
-    source: { chapter: '1', pages: '32–34' }, difficulty: 'Foundation', concept: 'Probability endpoints',
-  },
-  {
-    id: 'ch1-tf-05', chapterId: '1', type: 'tf',
-    title: 'A required worldview?',
-    prompt: 'Someone who rejects a completely deterministic universe cannot use Bayesian probability to reason about uncertainty.',
-    answer: false,
-    hints: ['Does reasoning consistently about uncertainty require a particular theory of how the world is generated?', 'The book distinguishes Bayesian reasoning from a commitment to determinism.'],
-    explanation: 'Bayesian reasoning does not require determinism. It describes how to represent and update uncertainty; that framework can be used with different views about the underlying physical world.',
-    source: { chapter: '1', pages: '32–34' }, difficulty: 'Apply', concept: 'Bayesian interpretation',
-  },
-  {
-    id: 'ch1-tf-06', chapterId: '1', type: 'tf',
-    title: 'Subjective, with rules',
-    prompt: 'Calling probability a degree of belief still leaves mathematical constraints on how a person’s probability assignments fit together.',
-    answer: true,
-    hints: ['Does a personal viewpoint make the probability rules optional?', 'Beliefs may depend on information while still being required to be internally consistent.'],
-    explanation: 'Subjective probability describes an observer’s uncertainty, not unrestricted opinion. Assignments must fit the probability rules; chapter 6 develops this requirement as coherence.',
-    source: { chapter: '1', pages: '31–34' }, difficulty: 'Foundation', concept: 'Constrained belief',
-  },
-  {
-    id: 'ch2-tf-01', chapterId: '2', type: 'tf',
-    title: 'An unknown response rate',
-    prompt: 'A psychologist does not know the population probability of recalling a word after a delay. Her uncertainty about that probability is epistemic uncertainty.',
-    answer: true,
-    hints: ['Is the unknown quantity a process parameter or one particular outcome?', 'Epistemic uncertainty concerns what is not known about the parameter.'],
-    explanation: 'The unknown is the population recall probability, a parameter of the process. Learning about that parameter can reduce epistemic uncertainty, even though individual recall outcomes can still vary.',
-    source: { chapter: '2', pages: '45–50' }, difficulty: 'Foundation', concept: 'Parameter uncertainty',
-  },
-  {
-    id: 'ch2-tf-02', chapterId: '2', type: 'tf',
-    title: 'A perfectly known coin',
-    prompt: 'For independent tosses of a coin whose head probability is known to be exactly 0.70, there is no remaining uncertainty about the next toss.',
-    answer: false,
-    hints: ['Does knowing a probability of 0.70 tell you which outcome will happen?', 'Parameter certainty can coexist with outcome variability.'],
-    explanation: 'The head probability is known, but the next toss can still be heads or tails. Within the stated model, this remaining outcome uncertainty is aleatory.',
-    source: { chapter: '2', pages: '48–52' }, difficulty: 'Foundation', concept: 'Outcome uncertainty',
-  },
-  {
-    id: 'ch2-tf-03', chapterId: '2', type: 'tf',
-    title: 'The plug-in shortcut',
-    prompt: 'A prediction that treats an estimated success rate of 0.60 as if it were the exact known population rate automatically accounts for uncertainty about that estimate.',
-    answer: false,
-    hints: ['What happens to all the other plausible values of the success rate?', 'A plug-in prediction conditions on a single chosen parameter value.'],
-    explanation: 'Treating the estimate as known drops uncertainty about the parameter. Such a prediction can still include outcome variability conditional on 0.60, but it does not average over other plausible success rates.',
-    source: { chapter: '2', pages: '49–51' }, difficulty: 'Apply', concept: 'Plug-in prediction',
-  },
-  {
-    id: 'ch2-tf-04', chapterId: '2', type: 'tf',
-    title: 'Same estimate, same uncertainty?',
-    prompt: 'Two studies report the same estimated response rate, but one has 20 observations and the other has 2,000. The matching estimates alone establish that uncertainty about the population rate is identical.',
-    answer: false,
-    hints: ['Does a point estimate describe how much information supports it?', 'The same central estimate can be supported by very different amounts of evidence.'],
-    explanation: 'A point estimate does not describe the full uncertainty about a parameter. Sample size, prior information, and the model matter. Matching estimates alone are insufficient to conclude that epistemic uncertainty is equal.',
-    source: { chapter: '2', pages: '49–52' }, difficulty: 'Apply', concept: 'Estimate versus uncertainty',
-  },
-  {
-    id: 'ch2-tf-05', chapterId: '2', type: 'tf',
-    title: 'Learning the rate',
-    prompt: 'Learning a stable process’s success probability more precisely need not eliminate the variability of future binary outcomes generated at that probability.',
-    answer: true,
-    hints: ['Suppose the exact success probability turns out to be 0.40.', 'Even perfect knowledge of 0.40 leaves both success and failure possible.'],
-    explanation: 'More information can reduce uncertainty about the parameter while outcome variation remains. For a known probability strictly between 0 and 1, future binary outcomes are still uncertain in the stated model.',
-    source: { chapter: '2', pages: '49–52' }, difficulty: 'Apply', concept: 'Two uncertainty sources',
-  },
-  {
-    id: 'ch2-tf-06', chapterId: '2', type: 'tf',
-    title: 'Both at once',
-    prompt: 'Predicting whether a randomly selected person recalls a word can involve both uncertainty about the population recall rate and outcome variability conditional on that rate.',
-    answer: true,
-    hints: ['There are two questions: what is the rate, and what will this person do?', 'A prediction can average over plausible parameter values and over possible outcomes at each value.'],
-    explanation: 'Both sources can contribute to a prediction. Epistemic uncertainty concerns the unknown rate; aleatory uncertainty concerns the individual outcome conditional on a specified rate.',
-    source: { chapter: '2', pages: '49–52' }, difficulty: 'Foundation', concept: 'Predictive uncertainty',
-  },
-  {
-    id: 'ch3-tf-01', chapterId: '3', type: 'tf',
-    title: 'Turning a conditional around',
-    prompt: 'If 85% of students using a mnemonic answer correctly, it follows that 85% of students who answer correctly used that mnemonic.',
-    answer: false,
-    hints: ['The two percentages condition on different groups.', 'P(correct | mnemonic) is not generally P(mnemonic | correct).'],
-    explanation: 'The reverse conditional also depends on how common mnemonic use is and how often other students answer correctly. Bayes’ rule combines those base rates with the likelihood.',
-    source: { chapter: '3', pages: '67–72' }, difficulty: 'Foundation', concept: 'Inverse fallacy',
-  },
-  {
-    id: 'ch3-tf-02', chapterId: '3', type: 'tf',
-    title: 'Evidence with a direction',
-    prompt: 'For observed data D, P(D | A) / P(D | B) = 4. This means the data are four times as probable under A as under B.',
-    answer: true,
-    hints: ['Read the numerator and denominator in the order given.', 'The ratio compares predictions for D under two different hypotheses.'],
-    explanation: 'That is precisely what this likelihood ratio says. It compares probabilities of the data under the hypotheses, not the posterior probabilities of the hypotheses themselves.',
-    source: { chapter: '3', pages: '69–72' }, difficulty: 'Foundation', concept: 'Likelihood ratio',
-  },
-  {
-    id: 'ch3-tf-03', chapterId: '3', type: 'tf',
-    title: 'Winning evidence, losing belief',
-    prompt: 'A and B are mutually exclusive and exhaustive. A likelihood ratio of 4 in favour of A guarantees P(A | D) > 0.50, whatever the nonzero prior probabilities.',
-    answer: false,
-    hints: ['Can a hypothesis begin with sufficiently low prior odds?', 'Prior odds A:B of 1:20 become posterior odds of 4:20.'],
-    explanation: 'Evidence in favour of A increases its odds relative to B, but may not make A the favourite. For example, prior odds of 1:20 become 1:5, giving posterior probability 1/6 for A.',
-    source: { chapter: '3', pages: '69–72' }, difficulty: 'Apply', concept: 'Evidence versus belief',
-  },
-  {
-    id: 'ch3-tf-04', chapterId: '3', type: 'tf',
-    title: 'One ratio, many likelihoods',
-    prompt: 'Knowing that P(D | A) / P(D | B) = 4 uniquely determines P(D | A) = 0.80 and P(D | B) = 0.20.',
-    answer: false,
-    hints: ['Can you find a second pair of valid probabilities with ratio 4?', 'For example, consider 0.40 and 0.10.'],
-    explanation: 'A ratio does not fix its two components. Both 0.80/0.20 and 0.40/0.10 equal 4. Likelihoods under different hypotheses need not sum to 1.',
-    source: { chapter: '3', pages: '69–72' }, difficulty: 'Apply', concept: 'Likelihood scale',
-  },
-  {
-    id: 'ch3-tf-05', chapterId: '3', type: 'tf',
-    title: 'When evidence equals odds',
-    prompt: 'If prior odds A:B are 1:1 and P(D | A) / P(D | B) = 4, then posterior odds A:B are 4:1.',
-    answer: true,
-    hints: ['Posterior odds are prior odds multiplied by the likelihood ratio.', 'Make sure both ratios have A in the numerator and B in the denominator.'],
-    explanation: 'The odds update is 1 × 4 = 4. Equal prior odds make the likelihood ratio numerically equal to the posterior odds; this equality does not hold for arbitrary prior odds.',
-    working: ['Posterior odds A:B = prior odds A:B × P(D | A)/P(D | B)', '1 × 4 = 4, or 4:1'],
-    source: { chapter: '3', pages: '69–72' }, difficulty: 'Foundation', concept: 'Odds update',
-  },
-  {
-    id: 'ch3-tf-06', chapterId: '3', type: 'tf',
-    title: 'A weighted prediction',
-    prompt: 'If three mutually exclusive strategies cover every participant, the overall probability of a correct answer is the sum of each strategy’s accuracy multiplied by its prevalence.',
-    answer: true,
-    hints: ['Participants do not necessarily use the three strategies equally often.', 'Each path to a correct answer contributes P(strategy) × P(correct | strategy).'],
-    explanation: 'The law of total probability adds the joint probabilities along all the disjoint paths to a correct answer. An unweighted average is justified only when the strategies are equally prevalent.',
-    source: { chapter: '3', pages: '61–66' }, difficulty: 'Foundation', concept: 'Total probability',
-  },
-  {
-    id: 'ch3-tf-07', chapterId: '3', type: 'tf',
-    title: 'Which way do the odds face?',
-    prompt: 'Prior odds of 4:1 in favour of B over A, followed by a likelihood ratio P(D | A)/P(D | B) = 4, give posterior odds of 16:1 in favour of A.',
-    answer: false,
-    hints: ['The stated prior odds and likelihood ratio point in opposite directions.', 'Express prior odds as A:B = 1:4 before multiplying.'],
-    explanation: 'With a consistent orientation, the prior odds A:B are 1/4 and the likelihood ratio is 4. Their product is 1, giving equal posterior odds, not 16:1.',
-    working: ['Prior odds A:B = 1/4', 'Posterior odds A:B = (1/4) × 4 = 1'],
-    source: { chapter: '3', pages: '69–72' }, difficulty: 'Apply', concept: 'Odds orientation',
-  },
-  {
-    id: 'ch3-calc-01', chapterId: '3', type: 'calculation',
-    title: 'Three routes to a correct answer',
-    prompt: 'In a practice study, each participant uses exactly one of the three strategies below. The strategy proportions and conditional success probabilities are known and fixed. What is the probability that a randomly selected participant answers correctly? Enter a probability from 0 to 1, rounded to two decimals.',
-    table: strategyTable, answer: 0.58,
-    hints: ['Find the probability of each path: strategy and correct response.', 'Multiply each row’s two probabilities, then add the three products.'],
-    explanation: 'Weight each strategy’s accuracy by how often that strategy is used. The three paths are mutually exclusive and cover everyone, so their joint probabilities add to 0.58.',
-    working: ['P(correct) = (0.40 × 0.80) + (0.35 × 0.60) + (0.25 × 0.20)', '= 0.32 + 0.21 + 0.05 = 0.58'],
-    source: { chapter: '3', pages: '61–66' }, difficulty: 'Foundation', concept: 'Total probability',
-  },
-  {
-    id: 'ch3-calc-02', chapterId: '3', type: 'calculation',
-    title: 'Who used retrieval practice?',
-    prompt: 'Each participant uses exactly one strategy, with the fixed probabilities below. A randomly selected participant answers correctly. What is the probability that this participant used retrieval practice (R)? Enter a probability from 0 to 1, rounded to two decimals.',
-    table: strategyTable, answer: 0.32 / 0.58,
-    hints: ['We need P(R | correct), not P(correct | R).', 'Divide the retrieval-and-correct probability, 0.40 × 0.80, by the overall correct probability, 0.58.'],
-    explanation: 'Among the correct responses, the retrieval-practice path contributes 0.32 out of a total probability of 0.58. The posterior is approximately 0.5517, which rounds to 0.55. The 0.80 in the table is the reverse conditional.',
-    working: ['P(R and correct) = 0.40 × 0.80 = 0.32', 'P(correct) = 0.32 + 0.21 + 0.05 = 0.58', 'P(R | correct) = 0.32 / 0.58 ≈ 0.5517 → 0.55'],
-    source: { chapter: '3', pages: '67–72' }, difficulty: 'Apply', concept: 'Bayes’ rule',
-  },
-  {
-    id: 'ch3-calc-03', chapterId: '3', type: 'calculation',
-    title: 'Learning from an error',
-    prompt: 'Each participant uses exactly one strategy, with the fixed probabilities below. A randomly selected participant answers incorrectly. What is the probability that this participant was guessing (G)? Enter a probability from 0 to 1, rounded to two decimals.',
-    table: strategyTable, answer: 0.20 / 0.42,
-    hints: ['First replace each accuracy with its probability of an incorrect response.', 'P(G and incorrect) = 0.25 × 0.80. The overall incorrect probability is 0.42.'],
-    explanation: 'Guessers contribute probability 0.20 to the total incorrect-response probability of 0.42. Conditioning on an error gives approximately 0.4762, rounded to 0.48. Use the fixed strategy proportions supplied in this question.',
-    working: ['P(incorrect) = (0.40 × 0.20) + (0.35 × 0.40) + (0.25 × 0.80)', '= 0.08 + 0.14 + 0.20 = 0.42', 'P(G | incorrect) = 0.20 / 0.42 ≈ 0.4762 → 0.48'],
-    source: { chapter: '3', pages: '61–72' }, difficulty: 'Apply', concept: 'Bayes’ rule with complements',
-  },
-  {
-    id: 'ch3-calc-04', chapterId: '3', type: 'calculation',
-    title: 'Two clubs, some overlap',
-    prompt: 'In Bayesville, P(book club) = 0.45, P(chess club) = 0.30, and P(both clubs) = 0.12. What is the probability that a randomly selected resident belongs to at least one of these clubs? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 0.63,
-    hints: ['Adding the two club probabilities counts some residents twice.', 'Subtract the overlap once: P(A or B) = P(A) + P(B) − P(A and B).'],
-    explanation: 'Members of both clubs are included in each individual club probability. Subtracting the overlap once gives the probability of belonging to one or both clubs: 0.63.',
-    working: ['P(book or chess) = 0.45 + 0.30 − 0.12 = 0.63'],
-    source: { chapter: '3', pages: '57–66' }, difficulty: 'Foundation', concept: 'Sum rule',
-  },
-  {
-    id: 'ch3-calc-05', chapterId: '3', type: 'calculation',
-    title: 'A joint event',
-    prompt: 'The probability that a student takes the train is 0.40. Among students taking the train, the probability of arriving before 9:00 is 0.75. What is the probability that a randomly selected student both takes the train and arrives before 9:00? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 0.30,
-    hints: ['The question asks for the probability of both events happening.', 'Use P(train and early) = P(train) × P(early | train).'],
-    explanation: 'Multiply the probability of taking the train by the conditional probability of arriving early. This product rule uses a conditional probability and does not require an independence assumption.',
-    working: ['P(train and early) = 0.40 × 0.75 = 0.30'],
-    source: { chapter: '3', pages: '61–66' }, difficulty: 'Foundation', concept: 'Product rule',
-  },
-  {
-    id: 'ch3-calc-06', chapterId: '3', type: 'calculation',
-    title: 'From prior to posterior odds',
-    prompt: 'Prior odds A:B are 1:5. The observed data have likelihood ratio P(D | A)/P(D | B) = 3. What are the posterior odds A:B, expressed as a single number P(A | D)/P(B | D)? Round to two decimals.',
-    answer: 0.60, unit: 'odds',
-    hints: ['Write 1:5 as the number 1/5.', 'Multiply the prior odds A:B by the likelihood ratio in the same orientation.'],
-    explanation: 'The odds move from 0.20 to 0.60. The data favour A relative to B, but B remains more probable because the final odds A:B are below 1. This answer is an odds ratio, not a probability.',
-    working: ['Prior odds A:B = 1/5 = 0.20', 'Posterior odds A:B = 0.20 × 3 = 0.60'],
-    source: { chapter: '3', pages: '69–72' }, difficulty: 'Apply', concept: 'Odds update',
-  },
-  {
-    id: 'ch3-calc-07', chapterId: '3', type: 'calculation',
-    title: 'Turn the odds into a probability',
-    prompt: 'A and B are mutually exclusive and exhaustive hypotheses. Prior odds A:B are 1:5, and P(D | A)/P(D | B) = 3. What is P(A | D)? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 0.375,
-    hints: ['First update the odds: (1/5) × 3.', 'Convert odds o to probability using o/(1 + o).'],
-    explanation: 'The posterior odds A:B are 0.60. Because A and B exhaust the possibilities, A’s probability is 0.60/1.60 = 0.375, rounded to 0.38. Evidence in A’s favour has not made A more likely than B.',
-    working: ['Posterior odds A:B = (1/5) × 3 = 0.60', 'P(A | D) = 0.60 / (1 + 0.60) = 0.375 → 0.38'],
-    source: { chapter: '3', pages: '69–72' }, difficulty: 'Apply', concept: 'Odds to probability',
-  },
-  {
-    id: 'ch3-calc-08', chapterId: '3', type: 'calculation',
-    title: 'How much more predictive?',
-    prompt: 'Two hypotheses assign P(D | A) = 0.54 and P(D | B) = 0.18 to the observed data. Calculate the likelihood ratio in favour of A over B. Round to two decimals.',
-    answer: 3, unit: 'ratio',
-    hints: ['The likelihood ratio compares probabilities of the observed data.', 'For A over B, divide P(D | A) by P(D | B).'],
-    explanation: 'The likelihood ratio is 3.00: A assigns three times the probability to these data that B does. This number alone does not determine posterior odds, which also depend on prior odds.',
-    working: ['Likelihood ratio A over B = 0.54 / 0.18 = 3.00'],
-    source: { chapter: '3', pages: '69–72' }, difficulty: 'Foundation', concept: 'Likelihood ratio',
-  },
-  {
-    id: 'ch3-calc-09', chapterId: '3', type: 'calculation',
-    title: 'The uncommon shortcut',
-    prompt: 'Exactly 10% of users employ a keyboard shortcut. A detector flags 90% of shortcut users and 20% of non-users. These rates are fixed, and everyone is either a user or a non-user. Given that a randomly selected person is flagged, what is the probability that they use the shortcut? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 1 / 3,
-    hints: ['A flag can arise from a shortcut user or from a non-user.', 'The two joint probabilities are 0.10 × 0.90 and 0.90 × 0.20. Normalize the first by their sum.'],
-    explanation: 'Flagged users contribute probability 0.09, while flagged non-users contribute 0.18. Only one-third of all flags therefore come from users, despite the detector catching most users. The answer rounds to 0.33.',
-    working: ['P(flag) = (0.10 × 0.90) + (0.90 × 0.20) = 0.27', 'P(user | flag) = 0.09 / 0.27 = 1/3 ≈ 0.3333 → 0.33'],
-    source: { chapter: '3', pages: '67–72' }, difficulty: 'Stretch', concept: 'Base rates',
-  },
-  {
-    id: 'ch5-tf-01', chapterId: '5', type: 'tf',
-    title: 'The same urn, different beliefs',
-    prompt: 'If two people both use Lindley’s urn method to express their uncertainty about tomorrow’s rain, they must end up assigning the same probability.',
-    answer: false,
-    hints: ['Does using the same measuring scale force the measured beliefs to be the same?', 'Each observer can be indifferent at a different proportion of favourable balls.'],
-    explanation: 'The urn supplies a shared probability scale, not a shared belief. Different information or judgments may lead the observers to match the rain event to different urn compositions.',
-    source: { chapter: '5', pages: '93–96' }, difficulty: 'Foundation', concept: 'Probability elicitation',
-  },
-  {
-    id: 'ch5-tf-02', chapterId: '5', type: 'tf',
-    title: 'A chance benchmark',
-    prompt: 'Under the elicitation method’s assumptions, indifference between equal rewards contingent on an uncertain event and on a known urn draw can place the person’s belief on a probability scale.',
-    answer: true,
-    hints: ['What does matching two equally valued reward opportunities tell us?', 'The known chance serves as a reference for the uncertain event.'],
-    explanation: 'Lindley’s method compares uncertainty about an event with a known chance mechanism. With comparable rewards and the method’s assumptions in place, the indifference point gives an elicited probability.',
-    source: { chapter: '5', pages: '93–96' }, difficulty: 'Foundation', concept: 'Indifference',
-  },
-  {
-    id: 'ch5-tf-03', chapterId: '5', type: 'tf',
-    title: 'A walk for information',
-    prompt: 'Ramsey’s farmer measures uncertainty solely by asking the farmer to choose between two urns with known colour proportions.',
-    answer: false,
-    hints: ['What can the farmer obtain by taking a detour?', 'The farmer is considering how far to walk to obtain information about the correct direction.'],
-    explanation: 'Ramsey’s farmer concerns willingness to pay a walking-distance cost for information that resolves uncertainty. It differs from matching an uncertain event to an urn or dice benchmark.',
-    source: { chapter: '5', pages: '97–98' }, difficulty: 'Foundation', concept: 'Value of information',
-  },
-  {
-    id: 'ch5-tf-04', chapterId: '5', type: 'tf',
-    title: 'Beliefs are not the whole decision',
-    prompt: 'Inferring a probability from someone’s choice can require assumptions about how they value the possible rewards and costs.',
-    answer: true,
-    hints: ['Would the same person make the same trade-off if a cost became especially painful?', 'Choices reflect both uncertainty and the consequences of each option.'],
-    explanation: 'A choice combines beliefs with preferences about outcomes. For example, a walking-distance elicitation needs assumptions about distance costs; deadlines or nonlinear costs can change the choice without changing the underlying belief.',
-    source: { chapter: '5', pages: '97–99' }, difficulty: 'Apply', concept: 'Beliefs and utilities',
-  },
-  {
-    id: 'ch5-calc-01', chapterId: '5', type: 'calculation',
-    title: 'An urn for a belief',
-    prompt: 'Maya is indifferent between receiving the same prize if event E occurs and receiving it after drawing a blue ball from an urn containing 62 blue and 38 white balls. Every ball is equally likely to be drawn. Assuming the elicitation method’s conditions hold, what probability for E is elicited? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 0.62,
-    hints: ['Find the known chance of a blue draw.', 'At indifference, match the event’s probability to 62/(62 + 38).'],
-    explanation: 'The urn’s blue-draw probability is 62/100 = 0.62. Under the stated assumptions, the matching indifference point elicits that same probability for E.',
-    working: ['P(blue) = 62 / (62 + 38) = 0.62', 'Elicited P(E) = 0.62'],
-    source: { chapter: '5', pages: '93–96' }, difficulty: 'Foundation', concept: 'Urn elicitation',
-  },
-  {
-    id: 'ch5-calc-02', chapterId: '5', type: 'calculation',
-    title: 'A dice benchmark',
-    prompt: 'Leo is indifferent between the same prize contingent on event E and contingent on rolling a six on one fair six-sided die. Assuming the elicitation method’s conditions hold, what probability for E is elicited? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 1 / 6,
-    hints: ['A fair six-sided die has six equally likely outcomes.', 'Exactly one of those outcomes wins the prize.'],
-    explanation: 'The known chance of rolling a six is 1/6. Matching E to that chance gives an elicited probability of approximately 0.1667, rounded to 0.17.',
-    working: ['P(six) = 1/6 ≈ 0.1667', 'Elicited P(E) ≈ 0.17'],
-    source: { chapter: '5', pages: '95–96' }, difficulty: 'Foundation', concept: 'Dice elicitation',
-  },
-  {
-    id: 'ch5-calc-03', chapterId: '5', type: 'calculation',
-    title: 'The farmer’s belief',
-    prompt: 'A farmer thinks the correct direction has probability p. Choosing correctly costs a 6 km walk; choosing wrongly costs 18 km in total. A perfectly informative sign requires an extra 3 km round-trip detour, after which the farmer walks the correct 6 km route. With linear walking-distance cost, the farmer is indifferent between guessing the direction and checking the sign. What is p? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 0.75,
-    hints: ['The sign gives a certain total distance of 3 + 6 = 9 km.', 'Set the expected distance without the sign equal to 9: 6p + 18(1 − p) = 9.'],
-    explanation: 'Indifference equates expected distance without information to the certain distance with information. Solving 18 − 12p = 9 gives p = 0.75. Linear distance cost is essential to this calculation.',
-    working: ['Distance with information = 6 + 3 = 9 km', '6p + 18(1 − p) = 9', '18 − 12p = 9, so p = 9/12 = 0.75'],
-    source: { chapter: '5', pages: '97–98' }, difficulty: 'Stretch', concept: 'Value of information',
-  },
-  {
-    id: 'ch5-calc-04', chapterId: '5', type: 'calculation',
-    title: 'How far for the sign?',
-    prompt: 'A farmer assigns probability 0.70 to choosing the correct direction. The walk is 5 km if correct and 15 km in total if wrong. A perfectly informative sign is a one-way distance f off the route, so checking it adds 2f km before the correct 5 km walk. Assuming linear walking-distance cost, find the largest one-way detour f at which checking the sign is at least as good as guessing. Give kilometres rounded to two decimals.',
-    answer: 1.50, unit: 'km',
-    hints: ['Calculate the expected distance without the sign.', 'At the threshold, 5 + 2f = 0.70 × 5 + 0.30 × 15.'],
-    explanation: 'Guessing gives an expected walk of 8 km. The sign is equally costly when 5 + 2f = 8, so the one-way detour can be at most 1.50 km. The round-trip detour is twice this amount.',
-    working: ['Expected distance without information = 0.70 × 5 + 0.30 × 15 = 8 km', '5 + 2f = 8', 'f = (8 − 5)/2 = 1.50 km'],
-    source: { chapter: '5', pages: '97–98' }, difficulty: 'Stretch', concept: 'Value of information',
-  },
-  {
-    id: 'ch6-tf-01', chapterId: '6', type: 'tf',
-    title: 'Consistent, but necessarily correct?',
-    prompt: 'If a person’s probabilities are coherent, their favoured explanation is guaranteed to be the true explanation of the world.',
-    answer: false,
-    hints: ['Internal consistency is a condition on how beliefs fit together.', 'A coherent person can still use an unsuitable model or have incomplete information.'],
-    explanation: 'Coherence requires consistency with the probability rules. It does not guarantee a correct model, complete information, or that the most probable explanation is true.',
-    source: { chapter: '6', pages: '108–112' }, difficulty: 'Foundation', concept: 'Coherence versus truth',
-  },
-  {
-    id: 'ch6-tf-02', chapterId: '6', type: 'tf',
-    title: 'Two coherent learners',
-    prompt: 'Two people with different coherent priors can observe the same data, use the same likelihood, and still reach different posterior probabilities.',
-    answer: true,
-    hints: ['The updating rule combines two ingredients: prior belief and predictive information.', 'The same likelihood ratio multiplies each person’s own prior odds.'],
-    explanation: 'Coherence constrains the update given the prior and likelihood. It does not force everyone to start with the same prior, so shared data and likelihoods do not generally imply identical posteriors.',
-    source: { chapter: '6', pages: '108–112' }, difficulty: 'Apply', concept: 'Coherent disagreement',
-  },
-  {
-    id: 'ch6-tf-03', chapterId: '6', type: 'tf',
-    title: 'A rule for reasoning',
-    prompt: 'The coherence requirement is a descriptive claim that real people always make probability judgments satisfying the probability rules.',
-    answer: false,
-    hints: ['Does a rule about how one should reason imply that everyone already follows it?', 'Coherence is a normative standard for consistency.'],
-    explanation: 'Coherence is prescriptive: it states how probability judgments should fit together. Human judgments can violate this standard, which is one reason the rules are useful for checking our reasoning.',
-    source: { chapter: '6', pages: '108–112' }, difficulty: 'Foundation', concept: 'Prescriptive reasoning',
-  },
-  {
-    id: 'ch6-calc-01', chapterId: '6', type: 'calculation',
-    title: 'Complete the pair',
-    prompt: 'A student assigns P(the library is open at noon) = 0.27. What probability must they assign to the library not being open at noon for these complementary beliefs to be coherent? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 0.73,
-    hints: ['The event and its complement cannot both happen, and one must happen.', 'Their probabilities must sum to 1.'],
-    explanation: 'An event and its complement form an exhaustive, mutually exclusive pair. The coherent complement is 1 − 0.27 = 0.73.',
-    working: ['P(not open) = 1 − P(open) = 1 − 0.27 = 0.73'],
-    source: { chapter: '6', pages: '108–112' }, difficulty: 'Foundation', concept: 'Complement consistency',
-  },
-  {
-    id: 'ch6-calc-02', chapterId: '6', type: 'calculation',
-    title: 'Three possible routes',
-    prompt: 'A commuter uses exactly one of three routes: north, east, or west. These possibilities are mutually exclusive and exhaustive. A coherent assessment gives P(north) = 0.24 and P(east) = 0.48. What must P(west) be? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 0.28,
-    hints: ['All three probabilities must add to 1.', 'Subtract the north and east probabilities from the total.'],
-    explanation: 'Exactly one route is taken, so the three probabilities sum to 1. The remaining probability is 1 − 0.24 − 0.48 = 0.28.',
-    working: ['P(west) = 1 − P(north) − P(east)', '= 1 − 0.24 − 0.48 = 0.28'],
-    source: { chapter: '6', pages: '108–112' }, difficulty: 'Foundation', concept: 'Partition consistency',
-  },
-  {
-    id: 'ch6-calc-03', chapterId: '6', type: 'calculation',
-    title: 'Make the beliefs fit together',
-    prompt: 'A workshop runs online with probability 0.40 and in person with probability 0.60; these are its only two formats. A student assigns P(attend | online) = 0.75 and P(attend | in person) = 0.25. What overall probability of attending is consistent with these beliefs? Enter a probability from 0 to 1, rounded to two decimals.',
-    answer: 0.45,
-    hints: ['Separate the two disjoint ways that attendance can occur.', 'Use the total-probability rule to combine the two conditional beliefs.'],
-    explanation: 'The marginal belief must agree with the specified format probabilities and conditional attendance beliefs. The coherent value is 0.40 × 0.75 + 0.60 × 0.25 = 0.45.',
-    working: ['P(attend) = P(online)P(attend | online) + P(in person)P(attend | in person)', '= (0.40 × 0.75) + (0.60 × 0.25)', '= 0.30 + 0.15 = 0.45'],
-    source: { chapter: '6', pages: '108–112' }, difficulty: 'Apply', concept: 'Marginal consistency',
-  },
-];
+function probability(rng, level) {
+  const three = level !== 'foundation';
+  const groupNames = three ? ['Morning', 'Afternoon', 'Evening'] : ['Morning', 'Afternoon'];
+  const ws = three ? pick(rng, [[0.2, 0.3, 0.5], [0.4, 0.35, 0.25], [0.3, 0.2, 0.5]]) : weights(rng);
+  const ps = groupNames.map(() => rate(rng));
+  const total = ws.reduce((sum, w, i) => sum + w * ps[i], 0);
+  const backwards = level === 'challenge';
+  const known = ws.slice(1).reduce((sum, w, j) => sum + w * ps[j + 1], 0);
+  return {
+    title: backwards ? 'Recover a missing success rate' : 'Across all workshop sessions',
+    context: 'A visitor attends exactly one workshop session. These sessions cover all possibilities. Success means finishing a puzzle.',
+    table: { headers: ['Session', 'P(session)', 'P(success | session)'], rows: groupNames.map((name, i) => [name, f(ws[i]), backwards && i === 0 ? '?' : f(ps[i])]) },
+    prompt: backwards ? `The overall success probability is ${f(total)}. What is P(success | Morning)?` : 'What is the probability that a randomly selected visitor finishes the puzzle?',
+    answer: backwards ? ps[0] : total,
+    hints: ['Weight each conditional success probability by the probability of its session.', backwards ? 'Subtract the known contributions from the overall probability, then divide by P(Morning).' : 'Add the joint probabilities for the mutually exclusive sessions.'],
+    steps: backwards
+      ? [step('Combined contribution from the afternoon and evening sessions', known, 'Known contribution = Σ P(session)P(success | session)', ws.slice(1).map((w, i) => `${f(w)} × ${f(ps[i + 1])}`).join(' + ') + ` = ${f(known)}`)]
+      : [step('Probability of attending in the morning and succeeding', ws[0] * ps[0], 'P(Morning and success) = P(Morning)P(success | Morning)', `${f(ws[0])} × ${f(ps[0])} = ${f(ws[0] * ps[0])}`)],
+    explanation: backwards
+      ? `P(success | Morning) = (${f(total)} − ${f(known)}) / ${f(ws[0])} = ${f(ps[0])}. The other sessions account for ${f(known)} of the overall success probability.`
+      : `P(success) = ${ws.map((w, i) => `${f(w)} × ${f(ps[i])}`).join(' + ')} = ${f(total)}. Each visitor belongs to exactly one session, so these joint probabilities can be added.`,
+    source: book('3'),
+  };
+}
+
+function bayes(rng, level) {
+  const ws = level === 'challenge' ? [0.2, 0.3, 0.5] : weights(rng);
+  const models = ws.map((weight, i) => ({ name: `Machine ${String.fromCharCode(65 + i)}`, type: 'fixed', weight, p: rate(rng) }));
+  const failures = level !== 'foundation' && rng() < 0.5 ? 1 : 0;
+  const successes = failures ? 0 : (level === 'challenge' ? 2 : 1);
+  const event = failures ? 'a failed inspection' : successes === 1 ? 'a passed inspection' : 'two passed inspections in a row';
+  const updated = updateModels(models, successes, failures);
+  const total = marginal(models, successes, failures);
+  return {
+    title: 'Which machine made the parts?',
+    context: 'One machine is selected using the prior probabilities below. It makes every part in this question. Inspections are independent conditional on that machine; its success rate remains fixed.',
+    table: modelTable(models), prompt: `After ${event}, what is the probability that Machine A was selected?`, answer: updated[0].weight,
+    hints: ['Calculate how well each machine predicts the observation. For a failed inspection use 1 − p.', 'Multiply each likelihood by its prior probability, then divide Machine A’s weighted likelihood by their total.'],
+    steps: [
+      step('Joint probability of Machine A and the observed data', models[0].weight * likelihood(models[0], successes, failures), 'P(A, data) = P(A)P(data | A)', `${f(models[0].weight)} × ${sequenceWorking(models[0], successes, failures)} = ${f(models[0].weight * likelihood(models[0], successes, failures))}`),
+      step('Overall probability of the observed data', total, 'P(data) = Σ P(model)P(data | model)', `${mixtureWorking(models, models.map(m => likelihood(m, successes, failures)))} = ${f(total)}`),
+    ],
+    explanation: `P(A | data) = P(A)P(data | A) / P(data) = ${posteriorWorking(models, successes, failures)} = ${f(updated[0].weight)}. Normalize over every possible machine.`,
+    source: book('3, 7'),
+  };
+}
+
+function sequences(rng, level) {
+  const p = rate(rng), n = integer(rng, 4, 7), k = integer(rng, 1, n - 1);
+  const ordered = level === 'foundation', tail = level === 'challenge';
+  const sequence = [...Array(k).fill('S'), ...Array(n - k).fill('F')].join(', ');
+  const oneOrder = fixedSequence(p, k, n - k);
+  const answer = tail ? 1 - fixedSequence(p, 0, n) - n * fixedSequence(p, 1, n - 1) : oneOrder * (ordered ? 1 : choose(n, k));
+  return {
+    title: tail ? 'At least two successes' : ordered ? 'One specified sequence' : 'A count in any order',
+    context: `A sensor detects a signal with fixed probability ${f(p)} on each independent trial. S denotes detection and F denotes no detection.`,
+    prompt: tail ? `What is the probability of at least two detections in ${n} trials?` : ordered ? `What is the probability of this exact ordered sequence: ${sequence}?` : `What is the probability of exactly ${k} detections in ${n} trials, in any order?`,
+    answer,
+    hints: [tail ? 'Use the complement: subtract zero and one detection from 1.' : ordered ? 'Multiply the success and failure probabilities for this single order.' : 'Calculate one sequence probability, then count how many orders have these same counts.', tail ? 'There are n possible positions for a single detection.' : ordered ? 'Do not add a binomial coefficient when the order is specified.' : 'The number of orders is n! / [k!(n − k)!].'],
+    steps: tail ? [
+      step('Probability of zero detections', fixedSequence(p, 0, n), 'P(0) = (1 − p)^n', `(1 − ${f(p)})^${n} = ${f(fixedSequence(p, 0, n))}`),
+      step('Probability of exactly one detection', n * fixedSequence(p, 1, n - 1), 'P(1) = n p (1 − p)^(n − 1)', `${n} × ${f(p)} × (1 − ${f(p)})^${n - 1} = ${f(n * fixedSequence(p, 1, n - 1))}`),
+    ] : ordered ? [step('Probability of the successes in the specified positions', p ** k, 'Success contribution = p^k', `${f(p)}^${k} = ${f(p ** k)}`)] : [
+      step('Number of possible orders', choose(n, k), 'C(n, k) = n! / [k!(n − k)!]', `C(${n}, ${k}) = ${choose(n, k)}`, 'number'),
+      step('Probability of one specified order', oneOrder, 'P(sequence) = p^k(1 − p)^(n − k)', `${f(p)}^${k} × (1 − ${f(p)})^${n - k} = ${f(oneOrder)}`),
+    ],
+    explanation: tail ? `P(at least 2) = 1 − (1 − ${f(p)})^${n} − ${n} × ${f(p)} × (1 − ${f(p)})^${n - 1} = ${f(answer)}.` : `P(${ordered ? 'this sequence' : 'this count'}) = ${ordered ? '' : `${choose(n, k)} × `}${f(p)}^${k} × (1 − ${f(p)})^${n - k} = ${f(answer)}. ${ordered ? 'A single specified order has no counting factor.' : 'All orders with these counts have equal probability and are mutually exclusive.'}`,
+    source: book('3, 7, 34'),
+  };
+}
+
+function beta(rng, level) {
+  let a = integer(rng, 1, 6), b = integer(rng, 1, 6);
+  const s = integer(rng, 2, 7), fails = level === 'practice' && rng() < 0.5 ? 0 : integer(rng, 1, 4);
+  const askSuccessParameter = rng() < 0.5;
+  if (level === 'foundation') return {
+    title: 'Update a beta distribution', context: `A plant nursery models the germination rate as θ ~ Beta(${a}, ${b}). Seeds germinate independently conditional on the same θ.`,
+    prompt: askSuccessParameter ? `${fails} of ${s + fails} seeds fail to germinate. What is the updated first parameter a′ in Beta(a′, b′)?` : `${s} of ${s + fails} seeds germinate. What is the updated second parameter b′ in Beta(a′, b′)?`, answer: askSuccessParameter ? a + s : b + fails, unit: 'number',
+    hints: [askSuccessParameter ? 'Subtract the failed seeds from the total to find the successes.' : 'Count the seeds that failed to germinate.', 'A beta posterior adds successes to a and failures to b.'],
+    steps: [askSuccessParameter ? step('Number of successes', s, 'Successes = total − failures', `${s + fails} − ${fails} = ${s}`, 'number') : step('Number of failures', fails, 'Failures = total − successes', `${s + fails} − ${s} = ${fails}`, 'number')],
+    explanation: `Beta(a + successes, b + failures) = Beta(${a} + ${s}, ${b} + ${fails}) = Beta(${a + s}, ${b + fails}). Therefore ${askSuccessParameter ? `a′ = ${a + s}` : `b′ = ${b + fails}`}.`, source: book('8'),
+  };
+  if (level === 'practice' && rng() < 0.4) return {
+    title: 'Laplace’s rule of succession', context: 'A uniform Beta(1, 1) prior describes an unknown success rate. All trials share this same rate and are independent conditional on it.',
+    prompt: `You observe ${s} successes and ${fails} failures. What is the probability that the next trial succeeds?`, answer: (s + 1) / (s + fails + 2),
+    hints: ['Update the uniform prior to Beta(1 + successes, 1 + failures).', 'For Beta(a′, b′), the next-success probability is a′ / (a′ + b′).'],
+    steps: [step('Updated success parameter a′', s + 1, 'a′ = 1 + successes', `1 + ${s} = ${s + 1}`, 'number'), step('Sum of posterior parameters', s + fails + 2, 'a′ + b′ = successes + failures + 2', `${s} + ${fails} + 2 = ${s + fails + 2}`, 'number')],
+    explanation: `P(next success | data) = (${s} + 1) / (${s} + ${fails} + 2) = ${f((s + 1) / (s + fails + 2))}. This is Laplace’s rule with both successes and failures.`, source: book('8, 9'),
+  };
+  const posterior = level === 'challenge', n = integer(rng, 3, 5), k = integer(rng, 1, n);
+  const aa = a + (posterior ? s : 0), bb = b + (posterior ? fails : 0);
+  const answer = betaCount(aa, bb, n, k);
+  return {
+    title: posterior ? 'Predict a future count after learning' : 'Predict a count from a beta prior',
+    context: `The success rate has prior θ ~ Beta(${a}, ${b}). All observations use the same θ and are independent conditional on it.${posterior ? ` You have observed ${s} successes and ${fails} failures.` : ' No observations have been collected yet.'}`,
+    prompt: `What is the probability of exactly ${k} successes in the next ${n} trials, in any order?`, answer,
+    hints: [posterior ? 'Update both beta parameters before making the prediction.' : 'Average the binomial probability across the whole beta prior.', 'Use C(n, k) × B(a′ + k, b′ + n − k) / B(a′, b′); do not substitute only the mean success rate.'],
+    steps: posterior ? [
+      step('Posterior success parameter a′', aa, 'a′ = a + successes', `${a} + ${s} = ${aa}`, 'number'),
+      step('Posterior failure parameter b′', bb, 'b′ = b + failures', `${b} + ${fails} = ${bb}`, 'number'),
+      step('Number of possible future orders', choose(n, k), 'C(n, k)', `C(${n}, ${k}) = ${choose(n, k)}`, 'number'),
+    ] : [step('Number of possible orders', choose(n, k), 'C(n, k)', `C(${n}, ${k}) = ${choose(n, k)}`, 'number'), step('Probability of one specified order', betaSequence(a, b, k, n - k), 'B(a + k, b + n − k) / B(a, b)', `B(${a + k}, ${b + n - k}) / B(${a}, ${b}) = ${betaProduct(a, b, k, n - k)} = ${f(betaSequence(a, b, k, n - k))}`)],
+    explanation: `P(K = ${k}) = C(${n}, ${k}) × B(${aa + k}, ${bb + n - k}) / B(${aa}, ${bb}) = ${choose(n, k)} × [${betaProduct(aa, bb, k, n - k)}] = ${f(answer)}. ${posterior ? `The updated distribution is Beta(${aa}, ${bb}).` : 'This prediction includes uncertainty about θ.'} Each predictive factor uses the beta parameters updated by the preceding outcomes.`, source: book('8, 9, 12'),
+  };
+}
+
+function mixtures(rng, level) {
+  const ws = level === 'foundation' ? [0.5, 0.5] : weights(rng);
+  const models = [
+    { name: 'Model A', type: 'fixed', weight: ws[0], p: level === 'foundation' ? 1 : rate(rng) },
+    { name: 'Model B', type: 'beta', weight: ws[1], a: level === 'foundation' ? 1 : integer(rng, 1, 6), b: level === 'foundation' ? 1 : integer(rng, 1, 6) },
+  ];
+  if (level === 'challenge') {
+    models[0].weight = 0.3; models[1].weight = 0.4;
+    models.push({ name: 'Model C', type: 'beta', weight: 0.3, a: integer(rng, 2, 7), b: integer(rng, 2, 7) });
+  }
+  const n = integer(rng, 2, 5), k = level === 'foundation' ? n : integer(rng, 1, n - 1);
+  const values = models.map(m => choose(n, k) * likelihood(m, k, n - k));
+  const answer = values.reduce((sum, v, i) => sum + models[i].weight * v, 0);
+  return {
+    title: 'Combine prior predictions', context: 'These are competing models of a seed variety’s germination rate. One model describes the entire batch. Within a beta model, all seeds share one unknown θ and are independent conditional on it. No data have been observed.',
+    table: modelTable(models), prompt: `What is the overall prior predictive probability that exactly ${k} of the first ${n} seeds germinate, in any order?`, answer,
+    hints: ['First calculate the event probability separately under each model.', 'Weight those predictions by the prior model probabilities and add them.'],
+    steps: models.map((m, i) => step(`Predictive probability under ${m.name}`, values[i], m.type === 'fixed' ? 'P(K = k) = C(n, k)p^k(1 − p)^(n − k)' : 'P(K = k) = C(n, k)B(a + k, b + n − k) / B(a, b)', `${choose(n, k)} × ${sequenceWorking(m, k, n - k)} = ${f(values[i])}`)),
+    explanation: `P(data) = Σ P(model)P(data | model) = ${mixtureWorking(models, values)} = ${f(answer)}. Use prior model weights because no data have yet been observed.`, source: book('12, 15, 22'),
+  };
+}
+
+function prediction(rng, level) {
+  const ws = weights(rng);
+  const models = [
+    { name: 'Model A', type: 'fixed', weight: ws[0], p: rate(rng) },
+    level === 'challenge' ? { name: 'Model B', type: 'beta', weight: ws[1], a: integer(rng, 2, 6), b: integer(rng, 2, 6) } : { name: 'Model B', type: 'fixed', weight: ws[1], p: rate(rng) },
+  ];
+  const s = level === 'foundation' ? 1 : integer(rng, 1, 3), fails = level === 'foundation' ? 0 : integer(rng, 1, 2);
+  const futureS = level === 'foundation' ? 1 : 2, futureF = level === 'challenge' ? 1 : 0, count = level === 'challenge';
+  const post = updateModels(models, s, fails);
+  const values = post.map(m => (count ? choose(futureS + futureF, futureS) : 1) * likelihood(m, futureS, futureF));
+  const answer = predictModels(models, s, fails, futureS, futureF, { count });
+  return {
+    title: level === 'foundation' ? 'Predict the next success' : 'Predict several future observations',
+    context: `One model describes a testing device throughout all past and future trials. Trials are independent conditional on its fixed θ; in Model B, a beta distribution (when listed) describes uncertainty about this shared θ. You observe an ordered sequence with ${s} successes and ${fails} failures.`,
+    table: modelTable(models), prompt: count ? 'What is the probability of exactly two successes in the next three trials, in any order?' : `What is the probability that ${futureS === 1 ? 'the next trial succeeds' : 'both of the next two trials succeed'}?`, answer,
+    hints: ['Update model probabilities using the observed sequence; also update the beta parameters, if present.', futureS === 1 ? 'Average the next-success predictions using posterior model weights.' : 'Calculate the entire future event within each model, then average. Do not square the model-averaged one-step prediction.'],
+    steps: [...modelLikelihoodSteps(models, s, fails), step('Posterior probability of Model A', post[0].weight, 'P(A | data) = P(A)P(data | A) / P(data)', `${posteriorWorking(models, s, fails)} = ${f(post[0].weight)}`)],
+    explanation: `Posterior weights are ${post.map(m => `${m.name}: ${f(m.weight)}`).join(', ')}. ${post.filter(m => m.type === 'beta').map(m => `${m.name} updates to Beta(${m.a}, ${m.b}).`).join(' ')} Within-model future probabilities are ${post.map((m, i) => `${m.name}: ${count ? `${choose(futureS + futureF, futureS)} × ` : ''}${sequenceWorking(m, futureS, futureF)} = ${f(values[i])}`).join('; ')}. The final prediction is ${mixtureWorking(post, values)} = ${f(answer)}.`, source: book('7, 9, 12, 22'),
+  };
+}
+
+function bayesFactors(rng, level) {
+  if (level === 'foundation') {
+    const first = integer(rng, 2, 8), second = integer(rng, 2, 6), reciprocal = rng() < 0.5;
+    return {
+      title: reciprocal ? 'Reverse a Bayes factor' : 'Link two model comparisons', context: `BF_AB = ${first}${reciprocal ? '.' : ` and BF_BC = ${second}. Both compare predictions for exactly the same data.`} BF_XY means P(data | X) / P(data | Y).`,
+      prompt: reciprocal ? 'What is BF_BA?' : 'What is BF_AC?', answer: reciprocal ? 1 / first : first * second, unit: 'ratio',
+      hints: [reciprocal ? 'Reversing the comparison swaps numerator and denominator.' : 'Write out the two likelihood ratios and cancel the shared Model B term.', reciprocal ? 'Take the reciprocal.' : 'Multiply BF_AB by BF_BC.'],
+      steps: [], explanation: reciprocal ? `BF_BA = 1 / BF_AB = 1 / ${first} = ${f(1 / first)}.` : `BF_AC = BF_AB × BF_BC = ${first} × ${second} = ${first * second}. The Model B likelihood cancels.`, source: book('22'),
+    };
+  }
+  if (level === 'practice' && rng() < 0.45) {
+    const cb = pick(rng, [0.25, 0.5, 2, 3, 4, 6]), ba = pick(rng, [0.25, 0.5, 2, 3, 4, 6]);
+    const ca = cb * ba;
+    return {
+      title: 'Link and reverse model comparisons', context: `For the same observed data, BF_CB = ${cb} and BF_BA = ${ba}. BF_XY means P(data | X) / P(data | Y).`,
+      prompt: 'What is BF_AC, the evidence for Model A relative to Model C?', answer: 1 / ca, unit: 'ratio',
+      hints: ['Combine BF_CB and BF_BA to obtain BF_CA: the Model B likelihood cancels.', 'The requested comparison goes from A to C. Reverse BF_CA by taking its reciprocal.'],
+      steps: [step('Bayes factor BF_CA', ca, 'BF_CA = BF_CB × BF_BA', `${cb} × ${ba} = ${f(ca)}`, 'ratio')],
+      explanation: `BF_AC = 1 / BF_CA = 1 / (BF_CB × BF_BA) = 1 / (${cb} × ${ba}) = ${f(1 / ca)}. Both transitivity and reversal are needed.`, source: book('22'),
+    };
+  }
+  if (level === 'practice') {
+    const w = pick(rng, [0.2, 0.3, 0.4, 0.6, 0.7]), bf = pick(rng, [0.25, 0.5, 2, 3, 4, 6]);
+    const priorOdds = w / (1 - w), odds = priorOdds * bf, answer = odds / (1 + odds);
+    return {
+      title: 'Evidence and posterior model probability', context: `Models A and B are mutually exclusive and exhaustive. P(A) = ${f(w)} before observing the data. The data yield BF_AB = ${bf}, meaning P(data | A) / P(data | B) = ${bf}.`,
+      prompt: 'What is the posterior probability of Model A?', answer,
+      hints: ['Convert the prior probability to odds A:B, then multiply by BF_AB.', 'Convert posterior odds O to a probability using O / (1 + O).'],
+      steps: [step('Prior odds A:B', priorOdds, 'Prior odds = P(A) / P(B)', `${f(w)} / ${f(1 - w)} = ${f(priorOdds)}`, 'ratio'), step('Posterior odds A:B', odds, 'Posterior odds = prior odds × BF_AB', `${f(priorOdds)} × ${bf} = ${f(odds)}`, 'ratio')],
+      explanation: `P(A | data) = posterior odds / (1 + posterior odds) = ${f(odds)} / (1 + ${f(odds)}) = ${f(answer)}. The Bayes factor updates the prior odds.`, source: book('3, 22'),
+    };
+  }
+  const a = integer(rng, 1, 5), b = integer(rng, 1, 5), p = pick(rng, [0.3, 0.5, 0.7]);
+  const s = integer(rng, 2, 5), fails = integer(rng, 1, 3);
+  const alternative = betaSequence(a, b, s, fails), point = fixedSequence(p, s, fails), answer = alternative / point;
+  return {
+    title: 'Compare a point model with a beta model', context: `Model A fixes θ = ${p}. Model B assigns θ ~ Beta(${a}, ${b}). All trials share the same θ and are independent conditional on it. You observe a specified ordered sequence with ${s} successes and ${fails} failures.`,
+    prompt: 'What is BF_BA, the evidence for Model B relative to Model A?', answer, unit: 'ratio',
+    hints: ['Calculate the marginal probability of the whole observed sequence under each model.', 'Divide Model B’s integrated prediction by Model A’s fixed-rate prediction. Model prior probabilities are not part of this Bayes factor.'],
+    steps: [step('Sequence probability under Model A', point, 'P(data | A) = p^s(1 − p)^f', `${p}^${s} × (1 − ${p})^${fails} = ${f(point)}`), step('Sequence probability under Model B', alternative, 'P(data | B) = B(a + s, b + f) / B(a, b)', `B(${a + s}, ${b + fails}) / B(${a}, ${b}) = ${betaProduct(a, b, s, fails)} = ${f(alternative)}`)],
+    explanation: `BF_BA = P(data | B) / P(data | A) = ${f(alternative)} / ${f(point)} = ${f(answer)}. It compares predictions for the same ordered sequence.`, source: book('12, 17, 22'),
+  };
+}
+
+const generators = { probability, bayes, sequences, beta, mixtures, prediction, 'bayes-factors': bayesFactors };
+function validate(skillId, seed, difficulty) {
+  if (!Object.hasOwn(generators, skillId)) throw new RangeError(`Unknown skill: ${skillId}`);
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xFFFFFFFF) throw new RangeError('Seed must be a uint32 integer.');
+  if (!difficulties.some(d => d.id === difficulty)) throw new RangeError(`Unknown difficulty: ${difficulty}`);
+}
+export function generateQuestion(skillId, seed, difficulty = 'practice') {
+  validate(skillId, seed, difficulty);
+  // A per-skill salt makes the same seed vary independently across skills.
+  const salt = skills.findIndex(s => s.id === skillId) * 0x9E3779B9;
+  return finish(skillId, seed, difficulty, generators[skillId](random((seed + salt) >>> 0), difficulty));
+}
+
+export function generateExam(seed, difficulty = 'practice') {
+  validate('prediction', seed, difficulty);
+  const rng = random(seed ^ 0xA51CE), ws = difficulty === 'foundation' ? [0.5, 0.5] : pick(rng, [[0.2, 0.3, 0.5], [0.25, 0.5, 0.25], [0.4, 0.35, 0.25]]);
+  const models = [
+    { name: 'Harbor workshop', type: 'fixed', weight: ws[0], p: pick(rng, [0.4, 0.5, 0.6, 0.7]) },
+    { name: 'Garden workshop', type: 'beta', weight: ws[1], a: difficulty === 'foundation' ? 1 : integer(rng, 2, 5), b: difficulty === 'foundation' ? 1 : integer(rng, 2, 5) },
+  ];
+  if (difficulty !== 'foundation') models.push({ name: 'Meadow workshop', type: 'fixed', weight: ws[2], p: pick(rng, [0.2, 0.3, 0.5, 0.7, 0.8].filter(p => p !== models[0].p)) });
+  const s = difficulty === 'foundation' ? 1 : integer(rng, 2, 4), fails = difficulty === 'foundation' ? 1 : integer(rng, 1, 3);
+  const extraS = difficulty === 'challenge' ? 0 : 1, extraF = 1 - extraS;
+  const post = updateModels(models, s, fails), extraPost = updateModels(models, s + extraS, fails + extraF);
+  const next = predictModels(models, s, fails, 1, 0);
+  const future = difficulty === 'challenge' ? 3 : 2;
+  const joint = predictModels(models, s + extraS, fails + extraF, future, 0);
+  const intro = `A box of toys comes from one of ${models.length === 2 ? 'two' : 'three'} workshops. Every toy in this exercise comes from that same workshop. A success means a toy passes inspection. Outcomes are independent conditional on the workshop’s fixed θ. At the Garden workshop, one shared unknown θ has the beta prior listed below. The first specified sequence contains ${s} successes and ${fails} failures.`;
+  const later = `${intro} One additional toy then ${extraS ? 'passes' : 'fails'} inspection, giving ${s + extraS} successes and ${fails + extraF} failures in total.`;
+  const common = { table: modelTable(models), source: book('7, 8, 9, 12, 22') };
+  const items = [
+    {
+      ...common, title: '1. Identify the workshop', context: intro,
+      prompt: 'After the first sequence, what is the probability that the box came from the Garden workshop?', answer: post[1].weight,
+      hints: ['Calculate the sequence probability under each workshop.', 'Weight each likelihood by its prior model probability and normalize.'],
+      steps: modelLikelihoodSteps(models, s, fails),
+      explanation: `P(Garden | first sequence) = ${posteriorWorking(models, s, fails, 1)} = ${f(post[1].weight)}. Within Garden, the posterior is Beta(${post[1].a}, ${post[1].b}).`,
+    },
+    {
+      ...common, title: '2. Predict the next inspection', context: intro,
+      prompt: 'Given the first sequence, what is the probability that the next toy passes?', answer: next,
+      hints: ['Use posterior workshop probabilities from the first sequence.', 'Garden’s next-pass probability uses its updated beta mean; the fixed workshop rates do not change.'],
+      steps: [step('Posterior probability of Garden', post[1].weight, 'P(Garden | data) = prior × likelihood / marginal likelihood', `${posteriorWorking(models, s, fails, 1)} = ${f(post[1].weight)}`), step('Next-pass probability within Garden', post[1].a / (post[1].a + post[1].b), 'P(next success | Garden, data) = a′ / (a′ + b′)', `${post[1].a} / (${post[1].a} + ${post[1].b}) = ${f(post[1].a / (post[1].a + post[1].b))}`)],
+      explanation: `P(next pass | first sequence) = ${mixtureWorking(post, post.map(m => likelihood(m, 1, 0)))} = ${f(next)}. Both the model weights and Garden’s parameter distribution reflect the first sequence.`,
+    },
+    {
+      ...common, title: '3. Update after another observation', context: later,
+      prompt: 'What is the updated probability that the box came from the Garden workshop?', answer: extraPost[1].weight,
+      hints: ['Use the previous posterior as the prior for this new observation.', 'Predict the new outcome within each updated workshop model, then normalize their weighted predictions.'],
+      steps: post.map(m => step(`Probability of the additional ${extraS ? 'pass' : 'failure'} under ${m.name}`, likelihood(m, extraS, extraF), 'Use the posterior predictive probability within this model', `${sequenceWorking(m, extraS, extraF)} = ${f(likelihood(m, extraS, extraF))}`)),
+      explanation: `P(Garden | all observations) = ${f(post[1].weight)} × ${f(likelihood(post[1], extraS, extraF))} / (${mixtureWorking(post, post.map(m => likelihood(m, extraS, extraF)))}) = ${f(extraPost[1].weight)}. Equivalently update the original priors with all ${s + extraS} successes and ${fails + extraF} failures.`,
+    },
+    {
+      ...common, title: '4. Predict within the uncertain-rate model', context: later,
+      prompt: 'Conditional on the box coming from Garden, what is the probability that the next toy passes?', answer: extraPost[1].a / (extraPost[1].a + extraPost[1].b),
+      hints: ['Conditioning on Garden removes the need to average across workshops.', 'Add all successes and failures to Garden’s original beta parameters, then use its posterior mean.'],
+      steps: [step('Garden’s updated success parameter', extraPost[1].a, 'a′ = a + all successes', `${models[1].a} + ${s + extraS} = ${extraPost[1].a}`, 'number'), step('Garden’s updated failure parameter', extraPost[1].b, 'b′ = b + all failures', `${models[1].b} + ${fails + extraF} = ${extraPost[1].b}`, 'number')],
+      explanation: `Garden now has Beta(${extraPost[1].a}, ${extraPost[1].b}), so P(next pass | Garden, all data) = ${extraPost[1].a} / (${extraPost[1].a} + ${extraPost[1].b}) = ${f(extraPost[1].a / (extraPost[1].a + extraPost[1].b))}.`,
+    },
+    {
+      ...common, title: '5. Predict several future inspections', context: later,
+      prompt: `Allowing for all ${models.length} possible workshops, what is the probability that all of the next ${future} toys pass?`, answer: joint,
+      hints: ['Within each workshop, calculate the joint probability of all future passes.', 'Average those joint probabilities using the latest posterior workshop weights. Do not raise the overall next-pass probability to a power.'],
+      steps: extraPost.map(m => step(`Probability of ${future} future passes under ${m.name}`, likelihood(m, future, 0), m.type === 'fixed' ? 'P(all pass | θ) = θ^m' : 'P(all pass | updated beta) = B(a′ + m, b′) / B(a′, b′)', `${sequenceWorking(m, future, 0)} = ${f(likelihood(m, future, 0))}`)),
+      explanation: `Posterior workshop weights are ${extraPost.map(m => `${m.name}: ${f(m.weight)}`).join(', ')}. Garden’s joint prediction is ${betaProduct(extraPost[1].a, extraPost[1].b, future, 0)} = ${f(likelihood(extraPost[1], future, 0))}. P(all ${future} pass | all data) = ${mixtureWorking(extraPost, extraPost.map(m => likelihood(m, future, 0)))} = ${f(joint)}. Each beta predictive factor updates after the preceding success; future outcomes share the same workshop and rate.`,
+    },
+  ];
+  return items.map((item, i) => finish('prediction', seed, difficulty, item, `-exam-${i + 1}`));
+}
