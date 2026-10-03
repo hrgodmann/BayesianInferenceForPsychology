@@ -1,6 +1,6 @@
 import { choose, fixedSequence, betaSequence, betaCount, updateModels, predictModels } from './math.js';
 
-export const GENERATOR_VERSION = 2;
+export const GENERATOR_VERSION = 3;
 export const skills = [
   { id: 'probability', title: 'Probability rules', description: 'Combine probabilities across groups.', icon: 'tree' },
   { id: 'bayes', title: 'Bayes’ rule', description: 'Update which explanation is most likely.', icon: 'cycle' },
@@ -10,13 +10,7 @@ export const skills = [
   { id: 'prediction', title: 'Predicting observations', description: 'Use what you have learned to predict what comes next.', icon: 'mind' },
   { id: 'bayes-factors', title: 'Bayes factors & odds', description: 'Compare predictions and update model odds.', icon: 'balance' },
 ];
-export const difficulties = [
-  { id: 'foundation', label: 'Foundation', description: 'One main calculation, with simpler models.' },
-  { id: 'practice', label: 'Practice', description: 'Combine calculations at quiz level.' },
-  { id: 'challenge', label: 'Challenge', description: 'Work backwards or combine more models and observations.' },
-];
-
-// Mulberry32: a saved seed reproduces a question without storing its content.
+// Mulberry32 keeps generated questions deterministic for verification.
 function random(seed) {
   let state = seed >>> 0;
   return () => {
@@ -66,20 +60,20 @@ function modelLikelihoodSteps(models, s, fails) {
     m.type === 'fixed' ? 'P(sequence | θ) = θ^s(1 − θ)^f' : 'P(sequence | model) = B(a + s, b + f) / B(a, b)',
     `${sequenceWorking(m, s, fails)} = ${f(likelihood(m, s, fails))}`));
 }
-function finish(skillId, seed, difficulty, item, suffix = '') {
+function finish(skillId, seed, item, suffix = '') {
   return {
-    id: `v${GENERATOR_VERSION}-${skillId}-${seed >>> 0}-${difficulty}${suffix}`, seed: seed >>> 0,
-    skillId, difficulty, unit: 'probability', decimals: precision(item.answer), ...item,
+    id: `v${GENERATOR_VERSION}-${skillId}-${seed >>> 0}${suffix}`, seed: seed >>> 0,
+    skillId, unit: 'probability', decimals: precision(item.answer), ...item,
   };
 }
 
-function probability(rng, level) {
-  const three = level !== 'foundation';
+function probability(rng) {
+  const backwards = rng() < 1 / 3;
+  const three = backwards || rng() < 0.5;
   const groupNames = three ? ['Morning', 'Afternoon', 'Evening'] : ['Morning', 'Afternoon'];
   const ws = three ? pick(rng, [[0.2, 0.3, 0.5], [0.4, 0.35, 0.25], [0.3, 0.2, 0.5]]) : weights(rng);
   const ps = groupNames.map(() => rate(rng));
   const total = ws.reduce((sum, w, i) => sum + w * ps[i], 0);
-  const backwards = level === 'challenge';
   const known = ws.slice(1).reduce((sum, w, j) => sum + w * ps[j + 1], 0);
   return {
     title: backwards ? 'Recover a missing success rate' : 'Across all workshop sessions',
@@ -98,11 +92,11 @@ function probability(rng, level) {
   };
 }
 
-function bayes(rng, level) {
-  const ws = level === 'challenge' ? [0.2, 0.3, 0.5] : weights(rng);
+function bayes(rng) {
+  const ws = rng() < 1 / 3 ? [0.2, 0.3, 0.5] : weights(rng);
   const models = ws.map((weight, i) => ({ name: `Machine ${String.fromCharCode(65 + i)}`, type: 'fixed', weight, p: rate(rng) }));
-  const failures = level !== 'foundation' && rng() < 0.5 ? 1 : 0;
-  const successes = failures ? 0 : (level === 'challenge' ? 2 : 1);
+  const failures = rng() < 1 / 3 ? 1 : 0;
+  const successes = failures ? 0 : integer(rng, 1, 2);
   const event = failures ? 'a failed inspection' : successes === 1 ? 'a passed inspection' : 'two passed inspections in a row';
   const updated = updateModels(models, successes, failures);
   const total = marginal(models, successes, failures);
@@ -120,9 +114,10 @@ function bayes(rng, level) {
   };
 }
 
-function sequences(rng, level) {
+function sequences(rng) {
   const p = rate(rng), n = integer(rng, 4, 7), k = integer(rng, 1, n - 1);
-  const ordered = level === 'foundation', tail = level === 'challenge';
+  const variant = pick(rng, ['sequence', 'count', 'tail']);
+  const ordered = variant === 'sequence', tail = variant === 'tail';
   const sequence = [...Array(k).fill('S'), ...Array(n - k).fill('F')].join(', ');
   const oneOrder = fixedSequence(p, k, n - k);
   const answer = tail ? 1 - fixedSequence(p, 0, n) - n * fixedSequence(p, 1, n - 1) : oneOrder * (ordered ? 1 : choose(n, k));
@@ -144,25 +139,26 @@ function sequences(rng, level) {
   };
 }
 
-function beta(rng, level) {
-  let a = integer(rng, 1, 6), b = integer(rng, 1, 6);
-  const s = integer(rng, 2, 7), fails = level === 'practice' && rng() < 0.5 ? 0 : integer(rng, 1, 4);
+function beta(rng) {
+  const variant = pick(rng, ['update', 'laplace', 'prior-count', 'posterior-count']);
+  const a = integer(rng, 1, 6), b = integer(rng, 1, 6);
+  const s = integer(rng, 2, 7), fails = variant === 'laplace' && rng() < 0.5 ? 0 : integer(rng, 1, 4);
   const askSuccessParameter = rng() < 0.5;
-  if (level === 'foundation') return {
+  if (variant === 'update') return {
     title: 'Update a beta distribution', context: `A plant nursery models the germination rate as θ ~ Beta(${a}, ${b}). Seeds germinate independently conditional on the same θ.`,
     prompt: askSuccessParameter ? `${fails} of ${s + fails} seeds fail to germinate. What is the updated first parameter a′ in Beta(a′, b′)?` : `${s} of ${s + fails} seeds germinate. What is the updated second parameter b′ in Beta(a′, b′)?`, answer: askSuccessParameter ? a + s : b + fails, unit: 'number',
     hints: [askSuccessParameter ? 'Subtract the failed seeds from the total to find the successes.' : 'Count the seeds that failed to germinate.', 'A beta posterior adds successes to a and failures to b.'],
     steps: [askSuccessParameter ? step('Number of successes', s, 'Successes = total − failures', `${s + fails} − ${fails} = ${s}`, 'number') : step('Number of failures', fails, 'Failures = total − successes', `${s + fails} − ${s} = ${fails}`, 'number')],
     explanation: `Beta(a + successes, b + failures) = Beta(${a} + ${s}, ${b} + ${fails}) = Beta(${a + s}, ${b + fails}). Therefore ${askSuccessParameter ? `a′ = ${a + s}` : `b′ = ${b + fails}`}.`, source: book('8'),
   };
-  if (level === 'practice' && rng() < 0.4) return {
+  if (variant === 'laplace') return {
     title: 'Laplace’s rule of succession', context: 'A uniform Beta(1, 1) prior describes an unknown success rate. All trials share this same rate and are independent conditional on it.',
     prompt: `You observe ${s} successes and ${fails} failures. What is the probability that the next trial succeeds?`, answer: (s + 1) / (s + fails + 2),
     hints: ['Update the uniform prior to Beta(1 + successes, 1 + failures).', 'For Beta(a′, b′), the next-success probability is a′ / (a′ + b′).'],
     steps: [step('Updated success parameter a′', s + 1, 'a′ = 1 + successes', `1 + ${s} = ${s + 1}`, 'number'), step('Sum of posterior parameters', s + fails + 2, 'a′ + b′ = successes + failures + 2', `${s} + ${fails} + 2 = ${s + fails + 2}`, 'number')],
     explanation: `P(next success | data) = (${s} + 1) / (${s} + ${fails} + 2) = ${f((s + 1) / (s + fails + 2))}. This is Laplace’s rule with both successes and failures.`, source: book('8, 9'),
   };
-  const posterior = level === 'challenge', n = integer(rng, 3, 5), k = integer(rng, 1, n);
+  const posterior = variant === 'posterior-count', n = integer(rng, 3, 5), k = integer(rng, 1, n);
   const aa = a + (posterior ? s : 0), bb = b + (posterior ? fails : 0);
   const answer = betaCount(aa, bb, n, k);
   return {
@@ -179,17 +175,19 @@ function beta(rng, level) {
   };
 }
 
-function mixtures(rng, level) {
-  const ws = level === 'foundation' ? [0.5, 0.5] : weights(rng);
+function mixtures(rng) {
+  const variant = pick(rng, ['spike-uniform', 'two-models', 'three-models']);
+  const spike = variant === 'spike-uniform';
+  const ws = spike ? [0.5, 0.5] : weights(rng);
   const models = [
-    { name: 'Model A', type: 'fixed', weight: ws[0], p: level === 'foundation' ? 1 : rate(rng) },
-    { name: 'Model B', type: 'beta', weight: ws[1], a: level === 'foundation' ? 1 : integer(rng, 1, 6), b: level === 'foundation' ? 1 : integer(rng, 1, 6) },
+    { name: 'Model A', type: 'fixed', weight: ws[0], p: spike ? 1 : rate(rng) },
+    { name: 'Model B', type: 'beta', weight: ws[1], a: spike ? 1 : integer(rng, 1, 6), b: spike ? 1 : integer(rng, 1, 6) },
   ];
-  if (level === 'challenge') {
+  if (variant === 'three-models') {
     models[0].weight = 0.3; models[1].weight = 0.4;
     models.push({ name: 'Model C', type: 'beta', weight: 0.3, a: integer(rng, 2, 7), b: integer(rng, 2, 7) });
   }
-  const n = integer(rng, 2, 5), k = level === 'foundation' ? n : integer(rng, 1, n - 1);
+  const n = integer(rng, 2, 5), k = spike ? n : integer(rng, 1, n - 1);
   const values = models.map(m => choose(n, k) * likelihood(m, k, n - k));
   const answer = values.reduce((sum, v, i) => sum + models[i].weight * v, 0);
   return {
@@ -201,19 +199,21 @@ function mixtures(rng, level) {
   };
 }
 
-function prediction(rng, level) {
+function prediction(rng) {
+  const variant = pick(rng, ['next', 'joint', 'count']);
+  const uncertain = rng() < 0.5;
   const ws = weights(rng);
   const models = [
     { name: 'Model A', type: 'fixed', weight: ws[0], p: rate(rng) },
-    level === 'challenge' ? { name: 'Model B', type: 'beta', weight: ws[1], a: integer(rng, 2, 6), b: integer(rng, 2, 6) } : { name: 'Model B', type: 'fixed', weight: ws[1], p: rate(rng) },
+    uncertain ? { name: 'Model B', type: 'beta', weight: ws[1], a: integer(rng, 2, 6), b: integer(rng, 2, 6) } : { name: 'Model B', type: 'fixed', weight: ws[1], p: rate(rng) },
   ];
-  const s = level === 'foundation' ? 1 : integer(rng, 1, 3), fails = level === 'foundation' ? 0 : integer(rng, 1, 2);
-  const futureS = level === 'foundation' ? 1 : 2, futureF = level === 'challenge' ? 1 : 0, count = level === 'challenge';
+  const s = integer(rng, 1, 3), fails = integer(rng, 0, 2);
+  const futureS = variant === 'next' ? 1 : 2, futureF = variant === 'count' ? 1 : 0, count = variant === 'count';
   const post = updateModels(models, s, fails);
   const values = post.map(m => (count ? choose(futureS + futureF, futureS) : 1) * likelihood(m, futureS, futureF));
   const answer = predictModels(models, s, fails, futureS, futureF, { count });
   return {
-    title: level === 'foundation' ? 'Predict the next success' : 'Predict several future observations',
+    title: variant === 'next' ? 'Predict the next success' : 'Predict several future observations',
     context: `One model describes a testing device throughout all past and future trials. Trials are independent conditional on its fixed θ; in Model B, a beta distribution (when listed) describes uncertainty about this shared θ. You observe an ordered sequence with ${s} successes and ${fails} failures.`,
     table: modelTable(models), prompt: count ? 'What is the probability of exactly two successes in the next three trials, in any order?' : `What is the probability that ${futureS === 1 ? 'the next trial succeeds' : 'both of the next two trials succeed'}?`, answer,
     hints: ['Update model probabilities using the observed sequence; also update the beta parameters, if present.', futureS === 1 ? 'Average the next-success predictions using posterior model weights.' : 'Calculate the entire future event within each model, then average. Do not square the model-averaged one-step prediction.'],
@@ -222,9 +222,10 @@ function prediction(rng, level) {
   };
 }
 
-function bayesFactors(rng, level) {
-  if (level === 'foundation') {
-    const first = integer(rng, 2, 8), second = integer(rng, 2, 6), reciprocal = rng() < 0.5;
+function bayesFactors(rng) {
+  const variant = pick(rng, ['reciprocal', 'transitivity', 'both', 'odds', 'marginal']);
+  if (variant === 'reciprocal' || variant === 'transitivity') {
+    const first = integer(rng, 2, 8), second = integer(rng, 2, 6), reciprocal = variant === 'reciprocal';
     return {
       title: reciprocal ? 'Reverse a Bayes factor' : 'Link two model comparisons', context: `BF_AB = ${first}${reciprocal ? '.' : ` and BF_BC = ${second}. Both compare predictions for exactly the same data.`} BF_XY means P(data | X) / P(data | Y).`,
       prompt: reciprocal ? 'What is BF_BA?' : 'What is BF_AC?', answer: reciprocal ? 1 / first : first * second, unit: 'ratio',
@@ -232,7 +233,7 @@ function bayesFactors(rng, level) {
       steps: [], explanation: reciprocal ? `BF_BA = 1 / BF_AB = 1 / ${first} = ${f(1 / first)}.` : `BF_AC = BF_AB × BF_BC = ${first} × ${second} = ${first * second}. The Model B likelihood cancels.`, source: book('22'),
     };
   }
-  if (level === 'practice' && rng() < 0.45) {
+  if (variant === 'both') {
     const cb = pick(rng, [0.25, 0.5, 2, 3, 4, 6]), ba = pick(rng, [0.25, 0.5, 2, 3, 4, 6]);
     const ca = cb * ba;
     return {
@@ -243,7 +244,7 @@ function bayesFactors(rng, level) {
       explanation: `BF_AC = 1 / BF_CA = 1 / (BF_CB × BF_BA) = 1 / (${cb} × ${ba}) = ${f(1 / ca)}. Both transitivity and reversal are needed.`, source: book('22'),
     };
   }
-  if (level === 'practice') {
+  if (variant === 'odds') {
     const w = pick(rng, [0.2, 0.3, 0.4, 0.6, 0.7]), bf = pick(rng, [0.25, 0.5, 2, 3, 4, 6]);
     const priorOdds = w / (1 - w), odds = priorOdds * bf, answer = odds / (1 + odds);
     return {
@@ -267,34 +268,33 @@ function bayesFactors(rng, level) {
 }
 
 const generators = { probability, bayes, sequences, beta, mixtures, prediction, 'bayes-factors': bayesFactors };
-function validate(skillId, seed, difficulty) {
+function validate(skillId, seed) {
   if (!Object.hasOwn(generators, skillId)) throw new RangeError(`Unknown skill: ${skillId}`);
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xFFFFFFFF) throw new RangeError('Seed must be a uint32 integer.');
-  if (!difficulties.some(d => d.id === difficulty)) throw new RangeError(`Unknown difficulty: ${difficulty}`);
 }
-export function generateQuestion(skillId, seed, difficulty = 'practice') {
-  validate(skillId, seed, difficulty);
+export function generateQuestion(skillId, seed) {
+  validate(skillId, seed);
   // A per-skill salt makes the same seed vary independently across skills.
   const salt = skills.findIndex(s => s.id === skillId) * 0x9E3779B9;
-  return finish(skillId, seed, difficulty, generators[skillId](random((seed + salt) >>> 0), difficulty));
+  return finish(skillId, seed, generators[skillId](random((seed + salt) >>> 0)));
 }
 
-export function generateExam(seed, difficulty = 'practice') {
-  validate('prediction', seed, difficulty);
-  const rng = random(seed ^ 0xA51CE), ws = difficulty === 'foundation' ? [0.5, 0.5] : pick(rng, [[0.2, 0.3, 0.5], [0.25, 0.5, 0.25], [0.4, 0.35, 0.25]]);
+export function generateExam(seed) {
+  validate('prediction', seed);
+  const rng = random(seed ^ 0xA51CE), ws = pick(rng, [[0.2, 0.3, 0.5], [0.25, 0.5, 0.25], [0.4, 0.35, 0.25]]);
   const models = [
     { name: 'Harbor workshop', type: 'fixed', weight: ws[0], p: pick(rng, [0.4, 0.5, 0.6, 0.7]) },
-    { name: 'Garden workshop', type: 'beta', weight: ws[1], a: difficulty === 'foundation' ? 1 : integer(rng, 2, 5), b: difficulty === 'foundation' ? 1 : integer(rng, 2, 5) },
+    { name: 'Garden workshop', type: 'beta', weight: ws[1], a: integer(rng, 2, 5), b: integer(rng, 2, 5) },
   ];
-  if (difficulty !== 'foundation') models.push({ name: 'Meadow workshop', type: 'fixed', weight: ws[2], p: pick(rng, [0.2, 0.3, 0.5, 0.7, 0.8].filter(p => p !== models[0].p)) });
-  const s = difficulty === 'foundation' ? 1 : integer(rng, 2, 4), fails = difficulty === 'foundation' ? 1 : integer(rng, 1, 3);
-  const extraS = difficulty === 'challenge' ? 0 : 1, extraF = 1 - extraS;
+  models.push({ name: 'Meadow workshop', type: 'fixed', weight: ws[2], p: pick(rng, [0.2, 0.3, 0.5, 0.7, 0.8].filter(p => p !== models[0].p)) });
+  const s = integer(rng, 2, 4), fails = integer(rng, 1, 3);
+  const extraS = integer(rng, 0, 1), extraF = 1 - extraS;
   const post = updateModels(models, s, fails), extraPost = updateModels(models, s + extraS, fails + extraF);
   const next = predictModels(models, s, fails, 1, 0);
-  const future = difficulty === 'challenge' ? 3 : 2;
+  const future = integer(rng, 2, 3);
   const joint = predictModels(models, s + extraS, fails + extraF, future, 0);
-  const intro = `A box of toys comes from one of ${models.length === 2 ? 'two' : 'three'} workshops. Every toy in this exercise comes from that same workshop. A success means a toy passes inspection. Outcomes are independent conditional on the workshop’s fixed θ. At the Garden workshop, one shared unknown θ has the beta prior listed below. The first specified sequence contains ${s} successes and ${fails} failures.`;
-  const later = `${intro} One additional toy then ${extraS ? 'passes' : 'fails'} inspection, giving ${s + extraS} successes and ${fails + extraF} failures in total.`;
+  const intro = `A box of toys comes from one of three workshops. Every toy in this exercise comes from that same workshop. A success means a toy passes inspection. Outcomes are independent conditional on the workshop’s fixed θ. At the Garden workshop, one shared unknown θ has the beta prior listed below. The first specified sequence contains ${s} successes and ${fails} failure${fails === 1 ? '' : 's'}.`;
+  const later = `${intro} One additional toy then ${extraS ? 'passes' : 'fails'} inspection, giving ${s + extraS} successes and ${fails + extraF} failure${fails + extraF === 1 ? '' : 's'} in total.`;
   const common = { table: modelTable(models), source: book('7, 8, 9, 12, 22') };
   const items = [
     {
@@ -333,5 +333,5 @@ export function generateExam(seed, difficulty = 'practice') {
       explanation: `Posterior workshop weights are ${extraPost.map(m => `${m.name}: ${f(m.weight)}`).join(', ')}. Garden’s joint prediction is ${betaProduct(extraPost[1].a, extraPost[1].b, future, 0)} = ${f(likelihood(extraPost[1], future, 0))}. P(all ${future} pass | all data) = ${mixtureWorking(extraPost, extraPost.map(m => likelihood(m, future, 0)))} = ${f(joint)}. Each beta predictive factor updates after the preceding success; future outcomes share the same workshop and rate.`,
     },
   ];
-  return items.map((item, i) => finish('prediction', seed, difficulty, item, `-exam-${i + 1}`));
+  return items.map((item, i) => finish('prediction', seed, item, `-exam-${i + 1}`));
 }

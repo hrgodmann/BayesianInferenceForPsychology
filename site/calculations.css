@@ -10,10 +10,7 @@
 .exam-card:hover { border-color: #6d7748; box-shadow: 3px 6px 0 #d5d9ba; }
 .question-context { line-height: 1.8; color: #675640; white-space: pre-line; font-size: .97rem; }
 .question-prompt { font-weight: 600; font-size: 1.04rem; line-height: 1.75; }
-.question-meta { gap: 10px; }
-.question-meta .tag { line-height: 1.4; }
 .question-title { overflow-wrap: anywhere; }
-.endless-label { color: var(--muted); font-size: .78rem; margin: -7px 0 24px; }
 .guided-work { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 22px 0 26px; padding: 13px 0; }
 .guided-work > .text-button { color: #69543a; font-size: .84rem; }
 .guided-step { padding: 18px 0 4px; }
@@ -27,26 +24,13 @@
 .step-feedback { color: #94412c; font-size: .8rem; margin: 7px 0 0; }
 .step-feedback:empty { display: none; }
 .step-feedback.good { color: #4e6032; }
-.difficulty-help { font-size: .8rem; color: #77644c; margin: -4px 0 24px; }
 .worked-solution > strong { font-size: .8rem; display: block; margin-bottom: 14px; color: #665139; }
 .worked-solution li + li { margin-top: 16px; }
 .formula, .calculation { display: block; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .formula { font-family: var(--serif); font-size: 1rem; margin-top: 4px; }
 .calculation { color: #6b5943; font-size: .87rem; }
-.self-assessment { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 24px; }
-.self-assessment summary { cursor: pointer; font-size: .82rem; color: #66543a; padding: 6px 0; }
-.self-assessment p { font-size: .78rem; margin: 10px 0 16px; color: var(--muted); }
-.self-assessment .self-mark-buttons { justify-content: flex-start; }
-.finish-row { display: flex; justify-content: flex-end; padding-top: 20px; }
-.finish-row .text-button { color: var(--muted); font-size: .77rem; }
 .reveal-row { display: flex; }
 .practice-wrap .source-note { display: block; }
-.progress-intro p { color: var(--muted); font-size: .95rem; }
-.chapter-log-row > span { color: var(--muted); font-size: .8rem; line-height: 1.6; }
-.privacy-note > p { max-width: 630px; color: var(--muted); font-size: .76rem; }
-.roundup-item .table-wrap { margin: 15px 0; }
-.session-heading > div { min-width: 0; }
-.summary-stats strong, .progress-stats strong { overflow-wrap: anywhere; }
 @media (max-width: 1100px) {
   .skill-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .skill-card { min-height: 165px; }
@@ -61,14 +45,11 @@
   .session-heading { flex-wrap: wrap; align-items: flex-start; gap: 0 14px; }
   .session-heading h1 { margin-bottom: 12px; }
   .question-count { margin: 0 0 19px; }
-  .session-heading > div { flex-basis: 100%; }
-  .question-meta .tag { font-size: .58rem; }
   .step-entry { flex-wrap: wrap; }
   .step-entry input { flex-basis: 100%; }
   .step-entry .button { min-height: 40px; }
   .guided-step label { font-size: .83rem; }
   .guided-work > .text-button { min-height: 40px; }
-  .chapter-log-row > span { grid-column: 1 / -1; grid-row: 2; }
   .reveal-row { flex-wrap: wrap; }
   .source-note { overflow-wrap: anywhere; }
   .input-help { line-height: 1.7; }
@@ -76,4 +57,3 @@
 .intermediate-answers { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 22px 0 26px; padding: 13px 0; font-size: .82rem; line-height: 1.7; color: #66543a; }
 .intermediate-answers summary { cursor: pointer; padding: 5px 0; }
 .intermediate-answers li + li { margin-top: 10px; }
-#summary-title:focus { outline: none; }
