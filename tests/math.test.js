@@ -183,3 +183,9 @@ test('invalid parameters and impossible observations fail with clear errors', ()
   assert.throws(() => predictModels(chefs(), 1, 0, 1, -1), /integer/);
   assert.throws(() => predictModels(chefs(), 1, 0, 1, 0, { count: 'yes' }), /Boolean/);
 });
+
+test('small-count fallback recovers a representable beta-binomial probability after sequence underflow', () => {
+  const answer = betaCount(1e-308, 1e-308, 100, 50);
+  assert.ok(answer > 0);
+  assert.ok(Math.abs(answer / 2e-310 - 1) < 1e-10);
+});

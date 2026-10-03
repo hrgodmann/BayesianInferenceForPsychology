@@ -13,7 +13,7 @@ function inspect(question) {
   assert.ok(question.answer >= 0);
   if (question.unit === 'probability') assert.ok(question.answer <= 1);
   assert.ok(['probability', 'ratio', 'number'].includes(question.unit));
-  assert.ok([2, 4].includes(question.decimals));
+  assert.ok([2, 4, 6, 8].includes(question.decimals));
   assert.equal(question.hints.length, 2);
   assert.ok(question.hints.every(hint => typeof hint === 'string' && hint.length > 15));
   assert.ok(question.steps.length <= 3);
@@ -54,7 +54,7 @@ function posterior(models, s, f) {
 function predict(models, s, f) { return models.reduce((sum, model) => sum + model.weight * sequence(model, s, f), 0); }
 
 test('seven assessed skills generate complete, varied numerical questions in one stream', () => {
-  assert.equal(GENERATOR_VERSION, 3);
+  assert.equal(GENERATOR_VERSION, 4);
   assert.equal(skills.length, 7);
   const ids = new Set();
   for (const skill of skills) for (let seed = 0; seed < 480; seed++) {
@@ -154,7 +154,12 @@ test('linked three-model exams are reproducible and all five answers stay consis
     near(exam[0].answer, post[1].weight);
     near(exam[1].answer, predict(post, 1, 0));
     near(exam[2].answer, updated[1].weight);
-    near(exam[3].answer, sequence(updated[1], 1, 0));
+    near(exam[3].answer, updated[1].weight);
+    assert.equal(exam[3].answer, exam[2].answer);
+    assert.match(exam[3].context, /corrected order/);
+    const corrected = exam[3].context.match(/corrected order is \(([^)]+)\)/)[1].split(', ');
+    assert.equal(corrected.filter(x => x === 'S').length, s + extraS);
+    assert.equal(corrected.filter(x => x === 'F').length, failures + 1 - extraS);
     near(exam[4].answer, predict(updated, future, 0));
     assert.ok(!exam.some(q => q.id === generateQuestion('prediction', seed).id));
   }
@@ -166,7 +171,7 @@ test('Bayes reversal and prior mixtures normalize and average the stated models'
   for (let seed = 0; seed < 300; seed++) {
     const q = generateQuestion('bayes', seed);
     const failures = q.prompt.includes('failed inspection') ? 1 : 0;
-    const successes = failures ? 0 : q.prompt.includes('two passed') ? 2 : 1;
+    const successes = q.prompt.includes('followed by') ? 1 : failures ? 0 : q.prompt.includes('two passed') ? 2 : 1;
     const bayesModels = parseModels(q);
     bayesVariants.add(`${bayesModels.length}-${successes}-${failures}`);
     near(q.answer, posterior(bayesModels, successes, failures)[0].weight);
@@ -178,7 +183,7 @@ test('Bayes reversal and prior mixtures normalize and average the stated models'
     mixtureVariants.add(mixtureModels.length === 3 ? 'three' : mixtureModels[0].p === 1 ? 'spike' : 'two');
     near(mixture.answer, combination * predict(mixtureModels, k, n - k));
   }
-  assert.equal(bayesVariants.size, 6);
+  assert.equal(bayesVariants.size, 8);
   assert.deepEqual([...mixtureVariants].sort(), ['spike', 'three', 'two']);
 });
 
@@ -229,6 +234,15 @@ test('Bayes factor orientation and probability-to-odds conversions are consisten
       const bf = Number(q.context.match(/BF_AB = ([\d.]+)/)[1].replace(/\.$/, ''));
       near(q.answer, prior * bf / (prior * bf + 1 - prior));
       variants.add('odds');
+    } else if (q.title === 'Compare beta forecasters') {
+      const [, k, n] = q.context.match(/exactly (\d+) successes in (\d+) trials/).map(Number);
+      const predictions = q.table.rows.map(([, prior]) => {
+        const [, a, b] = prior.match(/Beta\((\d+), (\d+)\)/).map(Number);
+        return sequence({ a, b }, k, n - k);
+      });
+      near(q.answer, Math.max(...predictions) / Math.min(...predictions));
+      assert.equal(new Set(predictions.map(p => p.toFixed(12))).size, 3, 'best and worst are unambiguous');
+      variants.add('forecasters');
     } else {
       const p = Number(q.context.match(/θ = ([\d.]+)/)[1].replace(/\.$/, ''));
       const [, a, b] = q.context.match(/Beta\((\d+), (\d+)\)/).map(Number);
@@ -237,5 +251,5 @@ test('Bayes factor orientation and probability-to-odds conversions are consisten
       variants.add('marginal');
     }
   }
-  assert.deepEqual([...variants].sort(), ['both', 'marginal', 'odds', 'reciprocal', 'transitivity']);
+  assert.deepEqual([...variants].sort(), ['both', 'forecasters', 'marginal', 'odds', 'reciprocal', 'transitivity']);
 });

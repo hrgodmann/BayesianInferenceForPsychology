@@ -1,4 +1,14 @@
-export const roundTo = (n, places = 2) => Math.round((n + Number.EPSILON * Math.max(1, Math.abs(n))) * 10 ** places) / 10 ** places;
+// Arithmetic can land a few machine-precision units below an exact half.
+// Snap only that tiny neighborhood to the half before rounding; this does not
+// provide a general tolerance for mathematically different student answers.
+export function roundTo(n, places = 2) {
+  const scale = 10 ** places;
+  let scaled = n * scale;
+  const half = Math.floor(scaled) + 0.5;
+  const noise = 16 * Number.EPSILON * Math.max(1, Math.abs(scaled));
+  if (Math.abs(scaled - half) <= noise) scaled = half;
+  return Math.round(scaled) / scale;
+}
 
 export function parseNumeric(raw, unit = 'probability') {
   let text = String(raw ?? '').trim();

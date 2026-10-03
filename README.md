@@ -5,13 +5,13 @@ Calculation practice for Bayesian Inference for Psychology. The autumn watercolo
 ## Practice
 
 - **Probability rules:** total probability and missing conditional rates.
-- **Bayes’ rule:** posterior probabilities with two or three explanations, including complementary observations.
+- **Bayes’ rule:** posterior probabilities with two or three explanations, including successes, failures, and mixed observations.
 - **Sequences & counts:** ordered sequences, exact binomial counts, and complements.
 - **Learning a proportion:** beta updates, prior and posterior count prediction, and Laplace’s rule of succession.
 - **Combining predictions:** prior mixtures of fixed-rate, beta, and universal-law models.
 - **Predicting observations:** update model weights and parameter distributions, then predict single or joint future outcomes.
-- **Bayes factors & odds:** reciprocal/transitive comparisons, posterior odds, and fixed-versus-beta predictive evidence.
-- **Exam practice:** five linked calculations: identify a source, predict, update with another observation, predict within the beta model, then predict several future observations jointly.
+- **Bayes factors & odds:** reciprocal/transitive comparisons, posterior odds, fixed-versus-beta evidence, and comparisons between beta forecasters.
+- **Exam practice:** five linked calculations: identify a source, predict, update with another observation, correct the order of the same observations, then predict several future observations jointly.
 
 There is one practice stream per skill, with no difficulty or session-length choices. Each question has optional guided numerical steps, hints, a worked solution, and a course-book reference. Students can check an answer or reveal the solution after working on paper. “Another question” generates fresh numbers; exam practice moves through five linked parts and then offers a new scenario. These questions practise the skills assessed in the supplied course materials; they are not copies of the original assessment questions.
 
@@ -44,9 +44,9 @@ The workflow runs the unit tests and publishes only `site/`. It excludes the boo
 - `site/engine.js` handles numeric parsing, rounding, and grading.
 - `site/app.js` renders the interface. All assets use relative paths; the site works under a GitHub Pages repository path.
 
-Seeds make generated questions reproducible in tests. Add mathematical regression tests for new exercise families, including source-assessment benchmark calculations with independent expected results.
+Seeds make generated questions reproducible in tests. `tests/audit-math.test.js` independently reconstructs answers and intermediate steps using exact BigInt fractions and factorial beta integrals from the displayed inputs. It checks final rounding, fraction acceptance, adjacent incorrect answers, and displayed working. Set `BAYESVILLE_AUDIT_SEEDS` to increase the default 2,500 seeds per skill and exam scenario. Add mathematical regression tests for new exercise families, including source-assessment benchmark calculations with independent expected results.
 
-Answers accept decimals, decimal commas, fractions, and percentages for probabilities. Final answers are checked after rounding to the precision displayed, with exact halfway values rounded up. Very small probabilities use four decimals. Intermediate calculations keep full precision; guided-step checks do not feed rounded values into later calculations.
+Answers accept decimals, decimal commas, fractions, and percentages for probabilities. Final answers are checked after rounding to the precision displayed, with exact halfway values rounded up. Probabilities close to zero or one use four decimal places, increasing to six or eight if necessary to avoid rounding a possible event to impossibility or an uncertain event to certainty. Intermediate calculations keep full precision; guided-step checks do not feed rounded values into later calculations.
 
 ## No saved progress
 

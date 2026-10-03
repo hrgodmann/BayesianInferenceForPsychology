@@ -61,6 +61,12 @@ export function betaCount(a, b, n, k) {
   count(k, 'k');
   if (k > n) throw new RangeError('k cannot exceed n.');
   shapes(a, b);
+  // Small classroom counts are more accurate without a log/exp round trip,
+  // especially when the exact result is a decimal rounding boundary.
+  if (n <= 100) {
+    const direct = choose(n, k) * betaSequence(a, b, k, n - k);
+    if (direct > 0 && Number.isFinite(direct)) return direct;
+  }
   // Multiplying in log space also works when the counting coefficient alone
   // overflows, although the final probability is representable.
   return Math.exp(logChoose(n, k) + logBetaSequence(a, b, k, n - k));

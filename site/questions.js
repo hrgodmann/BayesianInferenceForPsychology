@@ -1,6 +1,6 @@
 import { choose, fixedSequence, betaSequence, betaCount, updateModels, predictModels } from './math.js';
 
-export const GENERATOR_VERSION = 3;
+export const GENERATOR_VERSION = 4;
 export const skills = [
   { id: 'probability', title: 'Probability rules', description: 'Combine probabilities across groups.', icon: 'tree' },
   { id: 'bayes', title: 'Bayes’ rule', description: 'Update which explanation is most likely.', icon: 'cycle' },
@@ -23,7 +23,17 @@ function random(seed) {
 const pick = (rng, items) => items[Math.floor(rng() * items.length)];
 const integer = (rng, lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
 const f = value => Number(value.toPrecision(7)).toString();
-const precision = value => value > 0 && value < 0.01 ? 4 : 2;
+const precision = value => {
+  let places = value > 0 && (value < 0.01 || value > 0.99 && value < 1) ? 4 : 2;
+  // Preserve the distinction between a small probability and impossibility,
+  // and between a near-certain prediction and certainty.
+  while (value > 0 && value < 1 && places < 8) {
+    const rounded = Math.round(value * 10 ** places) / 10 ** places;
+    if (rounded > 0 && rounded < 1) break;
+    places += 2;
+  }
+  return places;
+};
 const step = (prompt, answer, formula, working, unit = 'probability') => ({
   prompt, answer, unit, decimals: precision(answer), formula, working,
 });
@@ -95,9 +105,10 @@ function probability(rng) {
 function bayes(rng) {
   const ws = rng() < 1 / 3 ? [0.2, 0.3, 0.5] : weights(rng);
   const models = ws.map((weight, i) => ({ name: `Machine ${String.fromCharCode(65 + i)}`, type: 'fixed', weight, p: rate(rng) }));
-  const failures = rng() < 1 / 3 ? 1 : 0;
-  const successes = failures ? 0 : integer(rng, 1, 2);
-  const event = failures ? 'a failed inspection' : successes === 1 ? 'a passed inspection' : 'two passed inspections in a row';
+  const observation = pick(rng, ['success', 'failure', 'two-successes', 'mixed']);
+  const failures = observation === 'failure' || observation === 'mixed' ? 1 : 0;
+  const successes = observation === 'failure' ? 0 : observation === 'two-successes' ? 2 : 1;
+  const event = successes && failures ? 'a passed inspection followed by a failed inspection' : failures ? 'a failed inspection' : successes === 1 ? 'a passed inspection' : 'two passed inspections in a row';
   const updated = updateModels(models, successes, failures);
   const total = marginal(models, successes, failures);
   return {
@@ -191,7 +202,7 @@ function mixtures(rng) {
   const values = models.map(m => choose(n, k) * likelihood(m, k, n - k));
   const answer = values.reduce((sum, v, i) => sum + models[i].weight * v, 0);
   return {
-    title: 'Combine prior predictions', context: 'These are competing models of a seed variety’s germination rate. One model describes the entire batch. Within a beta model, all seeds share one unknown θ and are independent conditional on it. No data have been observed.',
+    title: 'Combine prior predictions', context: 'These are competing models of a seed variety’s germination rate. One model describes the entire batch. Under each model, all seeds share the same θ and are independent conditional on it. A beta prior describes uncertainty about that shared rate. No data have been observed.',
     table: modelTable(models), prompt: `What is the overall prior predictive probability that exactly ${k} of the first ${n} seeds germinate, in any order?`, answer,
     hints: ['First calculate the event probability separately under each model.', 'Weight those predictions by the prior model probabilities and add them.'],
     steps: models.map((m, i) => step(`Predictive probability under ${m.name}`, values[i], m.type === 'fixed' ? 'P(K = k) = C(n, k)p^k(1 − p)^(n − k)' : 'P(K = k) = C(n, k)B(a + k, b + n − k) / B(a, b)', `${choose(n, k)} × ${sequenceWorking(m, k, n - k)} = ${f(values[i])}`)),
@@ -214,7 +225,7 @@ function prediction(rng) {
   const answer = predictModels(models, s, fails, futureS, futureF, { count });
   return {
     title: variant === 'next' ? 'Predict the next success' : 'Predict several future observations',
-    context: `One model describes a testing device throughout all past and future trials. Trials are independent conditional on its fixed θ; in Model B, a beta distribution (when listed) describes uncertainty about this shared θ. You observe an ordered sequence with ${s} successes and ${fails} failures.`,
+    context: `One model describes a testing device throughout all past and future trials. Trials are independent conditional on its fixed θ; in Model B, a beta distribution (when listed) describes uncertainty about this shared θ. You observe an ordered sequence with ${s} successes and ${fails} failures: (${[...Array(s).fill('S'), ...Array(fails).fill('F')].join(', ')}), where S means success and F means failure.`,
     table: modelTable(models), prompt: count ? 'What is the probability of exactly two successes in the next three trials, in any order?' : `What is the probability that ${futureS === 1 ? 'the next trial succeeds' : 'both of the next two trials succeed'}?`, answer,
     hints: ['Update model probabilities using the observed sequence; also update the beta parameters, if present.', futureS === 1 ? 'Average the next-success predictions using posterior model weights.' : 'Calculate the entire future event within each model, then average. Do not square the model-averaged one-step prediction.'],
     steps: [...modelLikelihoodSteps(models, s, fails), step('Posterior probability of Model A', post[0].weight, 'P(A | data) = P(A)P(data | A) / P(data)', `${posteriorWorking(models, s, fails)} = ${f(post[0].weight)}`)],
@@ -223,7 +234,7 @@ function prediction(rng) {
 }
 
 function bayesFactors(rng) {
-  const variant = pick(rng, ['reciprocal', 'transitivity', 'both', 'odds', 'marginal']);
+  const variant = pick(rng, ['reciprocal', 'transitivity', 'both', 'odds', 'marginal', 'forecasters']);
   if (variant === 'reciprocal' || variant === 'transitivity') {
     const first = integer(rng, 2, 8), second = integer(rng, 2, 6), reciprocal = variant === 'reciprocal';
     return {
@@ -255,11 +266,34 @@ function bayesFactors(rng) {
       explanation: `P(A | data) = posterior odds / (1 + posterior odds) = ${f(odds)} / (1 + ${f(odds)}) = ${f(answer)}. The Bayes factor updates the prior odds.`, source: book('3, 22'),
     };
   }
+  if (variant === 'forecasters') {
+    const n = integer(rng, 3, 6), k = integer(rng, 1, n - 1);
+    const candidates = Array.from({ length: 36 }, (_, i) => ({ a: 1 + Math.floor(i / 6), b: 1 + i % 6 }))
+      .map(model => ({ ...model, prediction: betaCount(model.a, model.b, n, k) }));
+    const models = [];
+    while (models.length < 3) {
+      const remaining = candidates.filter(model => models.every(other => Math.abs(model.prediction - other.prediction) > 1e-12));
+      models.push({ ...pick(rng, remaining), name: `Forecaster ${String.fromCharCode(65 + models.length)}` });
+    }
+    const ranked = [...models].sort((a, b) => b.prediction - a.prediction);
+    const best = ranked[0], worst = ranked[2], answer = best.prediction / worst.prediction;
+    return {
+      title: 'Compare beta forecasters',
+      context: `Three forecasters specify beta priors for one shared success rate θ. Within each model, trials are independent conditional on θ. Before observing any data, they predict exactly ${k} successes in ${n} trials, in any order.`,
+      table: { headers: ['Forecaster', 'Prior for θ'], rows: models.map(model => [model.name, `Beta(${model.a}, ${model.b})`]) },
+      prompt: 'What is the Bayes factor for the forecaster that predicts this count best, relative to the one that predicts it worst?',
+      answer, unit: 'ratio',
+      hints: ['Compute the prior predictive probability of this same count under each beta prior. Include all possible orders.', 'Divide the largest predictive probability by the smallest. Use unrounded values; the common counting factor cancels in the ratio.'],
+      steps: models.map(model => step(`Count probability under ${model.name}`, model.prediction, 'P(K = k) = C(n, k)B(a + k, b + n − k) / B(a, b)', `${choose(n, k)} × [${betaProduct(model.a, model.b, k, n - k)}] = ${f(model.prediction)}`)),
+      explanation: `${best.name} predicts this count best (${f(best.prediction)}), and ${worst.name} predicts it worst (${f(worst.prediction)}). BF(best, worst) = ${f(best.prediction)} / ${f(worst.prediction)} = ${f(answer)}. These data are ${f(answer)} times as probable under ${best.name} as under ${worst.name}. This compares predictive evidence for these data, not posterior model probabilities.`,
+      source: book('12, 22'),
+    };
+  }
   const a = integer(rng, 1, 5), b = integer(rng, 1, 5), p = pick(rng, [0.3, 0.5, 0.7]);
   const s = integer(rng, 2, 5), fails = integer(rng, 1, 3);
   const alternative = betaSequence(a, b, s, fails), point = fixedSequence(p, s, fails), answer = alternative / point;
   return {
-    title: 'Compare a point model with a beta model', context: `Model A fixes θ = ${p}. Model B assigns θ ~ Beta(${a}, ${b}). All trials share the same θ and are independent conditional on it. You observe a specified ordered sequence with ${s} successes and ${fails} failures.`,
+    title: 'Compare a point model with a beta model', context: `Model A fixes θ = ${p}. Model B assigns θ ~ Beta(${a}, ${b}). All trials share the same θ and are independent conditional on it. You observe a specified ordered sequence with ${s} successes and ${fails} failures: (${[...Array(s).fill('S'), ...Array(fails).fill('F')].join(', ')}), where S means success and F means failure.`,
     prompt: 'What is BF_BA, the evidence for Model B relative to Model A?', answer, unit: 'ratio',
     hints: ['Calculate the marginal probability of the whole observed sequence under each model.', 'Divide Model B’s integrated prediction by Model A’s fixed-rate prediction. Model prior probabilities are not part of this Bayes factor.'],
     steps: [step('Sequence probability under Model A', point, 'P(data | A) = p^s(1 − p)^f', `${p}^${s} × (1 − ${p})^${fails} = ${f(point)}`), step('Sequence probability under Model B', alternative, 'P(data | B) = B(a + s, b + f) / B(a, b)', `B(${a + s}, ${b + fails}) / B(${a}, ${b}) = ${betaProduct(a, b, s, fails)} = ${f(alternative)}`)],
@@ -293,7 +327,9 @@ export function generateExam(seed) {
   const next = predictModels(models, s, fails, 1, 0);
   const future = integer(rng, 2, 3);
   const joint = predictModels(models, s + extraS, fails + extraF, future, 0);
-  const intro = `A box of toys comes from one of three workshops. Every toy in this exercise comes from that same workshop. A success means a toy passes inspection. Outcomes are independent conditional on the workshop’s fixed θ. At the Garden workshop, one shared unknown θ has the beta prior listed below. The first specified sequence contains ${s} successes and ${fails} failure${fails === 1 ? '' : 's'}.`;
+  const firstOrder = [...Array(s).fill('S'), ...Array(fails).fill('F')];
+  const correctedOrder = [...firstOrder, extraS ? 'S' : 'F'].reverse();
+  const intro = `A box of toys comes from one of three workshops. Every toy in this exercise comes from that same workshop. A success means a toy passes inspection. Outcomes are independent conditional on the workshop’s fixed θ. At the Garden workshop, one shared unknown θ has the beta prior listed below. The first specified sequence contains ${s} successes and ${fails} failure${fails === 1 ? '' : 's'}. In recorded order it is (${firstOrder.join(', ')}), where S means pass and F means failure. The table gives the priors before any inspections.`;
   const later = `${intro} One additional toy then ${extraS ? 'passes' : 'fails'} inspection, giving ${s + extraS} successes and ${fails + extraF} failure${fails + extraF === 1 ? '' : 's'} in total.`;
   const common = { table: modelTable(models), source: book('7, 8, 9, 12, 22') };
   const items = [
@@ -319,11 +355,12 @@ export function generateExam(seed) {
       explanation: `P(Garden | all observations) = ${f(post[1].weight)} × ${f(likelihood(post[1], extraS, extraF))} / (${mixtureWorking(post, post.map(m => likelihood(m, extraS, extraF)))}) = ${f(extraPost[1].weight)}. Equivalently update the original priors with all ${s + extraS} successes and ${fails + extraF} failures.`,
     },
     {
-      ...common, title: '4. Predict within the uncertain-rate model', context: later,
-      prompt: 'Conditional on the box coming from Garden, what is the probability that the next toy passes?', answer: extraPost[1].a / (extraPost[1].a + extraPost[1].b),
-      hints: ['Conditioning on Garden removes the need to average across workshops.', 'Add all successes and failures to Garden’s original beta parameters, then use its posterior mean.'],
-      steps: [step('Garden’s updated success parameter', extraPost[1].a, 'a′ = a + all successes', `${models[1].a} + ${s + extraS} = ${extraPost[1].a}`, 'number'), step('Garden’s updated failure parameter', extraPost[1].b, 'b′ = b + all failures', `${models[1].b} + ${fails + extraF} = ${extraPost[1].b}`, 'number')],
-      explanation: `Garden now has Beta(${extraPost[1].a}, ${extraPost[1].b}), so P(next pass | Garden, all data) = ${extraPost[1].a} / (${extraPost[1].a} + ${extraPost[1].b}) = ${f(extraPost[1].a / (extraPost[1].a + extraPost[1].b))}.`,
+      ...common, title: '4. Correct the order of the observations',
+      context: `${later} You discover that these same toys were recorded in the wrong order. The corrected order is (${correctedOrder.join(', ')}). No extra toys have been inspected.`,
+      prompt: 'With the corrected order, what is the probability that the box came from the Garden workshop?', answer: extraPost[1].weight,
+      hints: ['Count successes and failures in the corrected sequence. Has either count changed?', 'With a shared constant rate and conditional independence, each model assigns the same probability to every order with these counts. Do not treat the correction as new data.'],
+      steps: modelLikelihoodSteps(models, s + extraS, fails + extraF),
+      explanation: `The corrected sequence still contains ${s + extraS} successes and ${fails + extraF} failure${fails + extraF === 1 ? '' : 's'}. Under each fixed-rate model its probability is θ^s(1 − θ)^f; integrating this same expression under Garden also depends only on the counts. Thus P(Garden | corrected sequence) = ${posteriorWorking(models, s + extraS, fails + extraF, 1)} = ${f(extraPost[1].weight)}, unchanged from part 3. The working groups successes first to evaluate the likelihood from the counts. This is one specified order, so no binomial coefficient is needed. Order invariance follows from the models stated here; it is not a rule for every time-dependent process.`,
     },
     {
       ...common, title: '5. Predict several future inspections', context: later,

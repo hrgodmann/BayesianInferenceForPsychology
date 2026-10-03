@@ -20,3 +20,14 @@ test('explicit half-up rounding, full-precision fractions, and question-specific
   assert.equal(gradeAnswer({ answer: .00432, decimals: 4 }, '0').correct, false);
   assert.equal(gradeAnswer({ answer: 3.3, unit: 'ratio' }, '3.30').correct, true);
 });
+
+test('rounding absorbs arithmetic noise at halves without accepting adjacent answers', () => {
+  const q = { answer: 13.124999999999993, unit: 'ratio', decimals: 2 };
+  assert.equal(formatAnswer(q), '13.13');
+  assert.equal(gradeAnswer(q, '105/8').correct, true);
+  assert.equal(gradeAnswer(q, '13.13').correct, true);
+  assert.equal(gradeAnswer(q, '13.12').correct, false);
+  assert.equal(roundTo(.62499999), .62);
+  assert.equal(roundTo(.62500001), .63);
+  assert.equal(formatAnswer({ answer: .0000128, decimals: 6 }), '0.000013');
+});

@@ -13,9 +13,11 @@ const skillIds = ['probability', 'bayes', 'sequences', 'beta', 'mixtures', 'pred
 const initialSeed = 0x12345678;
 const seedStep = 0x9e3779b9;
 const errors = [];
+const requests = [];
 page.setDefaultTimeout(10000);
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+page.on('request', request => requests.push(request.url()));
 await mkdir('.artifacts', { recursive: true });
 
 await page.addInitScript(({ initialSeed, seedStep }) => {
@@ -146,7 +148,9 @@ try {
   await firstStep.fill('not a number');
   await page.locator('[data-action="check-step"][data-index="0"]').click();
   assert.match(await page.locator('#step-feedback-0').innerText(), /Use a number/);
+  assert.equal(await firstStep.getAttribute('aria-invalid'), 'true', 'Invalid guided input is exposed to assistive technology');
   await firstStep.fill(guidedQuestion.steps[0]);
+  assert.notEqual(await firstStep.getAttribute('aria-invalid'), 'true', 'Editing clears guided validation state');
   await firstStep.press('Enter');
   assert.equal(await page.locator('#step-feedback-0').innerText(), 'Correct.');
   await click('hint'); await click('hint');
@@ -159,6 +163,49 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement.id), 'result-title');
   await page.screenshot({ path: '.artifacts/simplified-result.png', fullPage: true });
   await simplifiedControls();
+
+  await open('bayes');
+  await page.locator('#numeric-answer').fill('0.12345');
+  await click('toggle-guided');
+  await page.locator('[data-step="0"]').fill('1/3');
+  await click('toggle-guided');
+  await click('hint');
+  assert.equal(await page.locator('#numeric-answer').inputValue(), '0.12345', 'Hints and guided toggles retain the draft final answer');
+  await click('toggle-guided');
+  assert.equal(await page.locator('[data-step="0"]').inputValue(), '1/3', 'Hidden guided drafts are retained');
+  await click('about');
+  assert.equal(await page.locator('#modal').evaluate(dialog => dialog.open), true);
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.action), 'close-modal');
+  await page.keyboard.press('Tab');
+  // Chromium may briefly hand focus to browser chrome after the only dialog
+  // control. Background page controls must remain unreachable while modal.
+  assert.equal(await page.locator('#modal').evaluate(dialog => dialog.contains(document.activeElement) || document.activeElement === document.body), true, 'Help prevents focus from reaching background page controls');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.locator('#modal').evaluate(dialog => dialog.contains(document.activeElement)), true, 'Tab returns to the modal control');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#modal').evaluate(dialog => dialog.open), false);
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.action), 'about', 'Escape returns focus to Help');
+  assert.equal(await page.locator('#numeric-answer').inputValue(), '0.12345', 'Help preserves the draft answer');
+  await click('reveal');
+  await page.locator('.result-card.revealed').waitFor();
+  assert.equal(await page.locator('#result-title').innerText(), 'Solution', 'Revealing does not imply the student answered incorrectly');
+  assert.equal(await page.locator('#numeric-answer').isDisabled(), true);
+  assert.equal(await page.locator('.guided-work, [data-action="check"], [data-action="hint"]').count(), 0);
+  assert.equal(await page.locator('.intermediate-answers').count(), 1, 'The revealed solution retains the student’s intermediate draft for comparison');
+  await click('next');
+  assert.equal(await page.locator('#numeric-answer').inputValue(), '');
+  assert.equal(await page.locator('.hint-panel, .intermediate-answers, .result-card').count(), 0);
+  console.log('Passed: draft retention, Help keyboard focus, answer reveal, and clean next-question state.');
+
+  await open('bayes-factors');
+  assert.doesNotMatch(await page.locator('#answer-help').innerText(), /percentages work/);
+  await answer('50%');
+  assert.match(await page.locator('#answer-error').innerText(), /without a percent sign/);
+  assert.equal(await page.locator('.result-card').count(), 0);
+  const ratioQuestion = await current('bayes-factors');
+  await page.locator('#numeric-answer').fill(ratioQuestion.formatted);
+  await page.locator('#numeric-answer').press('Enter');
+  await page.locator('.result-card.correct').waitFor();
 
   await click('pause');
   await page.locator('[data-action="skill"]').first().waitFor();
@@ -216,10 +263,44 @@ try {
     await simplifiedControls();
     if (width === 320 || width === 1440) await page.screenshot({ path: `.artifacts/simplified-solution-${width}.png`, fullPage: true });
   }
-  for (const path of ['2025/quizzes25.md', '2025/BIPS-Exam-2025.md', 'quizzes/BIPS2026_Q1.pdf', 'docs/quiz-1-2-alignment.md']) {
-    assert.equal((await page.request.get(`${base}${path}`)).status(), 404, `Private course source stays outside the public site: ${path}`);
+
+  // Reproduce numerical boundary cases through the public input controls. The
+  // expected answers are independently known values, not app-generated strings.
+  for (const item of [
+    { seed: 117, skill: 'prediction', step: 1, places: 2, incorrect: '0.12', correct: '0.13' },
+    { seed: 76, skill: 'sequences', step: 0, places: 6, incorrect: '0', correct: '0.000013' },
+  ]) {
+    await home();
+    await page.evaluate(seed => Object.defineProperty(crypto, 'getRandomValues', {
+      configurable: true, value(array) { array.fill(seed); return array; },
+    }), item.seed);
+    await page.locator(`[data-action="skill"][data-id="${item.skill}"]`).click();
+    await page.locator('.question-card').waitFor();
+    await click('toggle-guided');
+    assert.match(await page.locator(`#step-help-${item.step}`).innerText(), new RegExp(`${item.places} decimal places`));
+    const field = page.locator(`#step-${item.step}`);
+    await field.fill(item.incorrect);
+    await field.press('Enter');
+    assert.match(await page.locator(`#step-feedback-${item.step}`).innerText(), /Not quite/);
+    await field.fill(item.correct);
+    await field.press('Enter');
+    assert.equal(await page.locator(`#step-feedback-${item.step}`).innerText(), 'Correct.');
+    if (item.seed === 76) {
+      assert.match(await page.locator('label[for="numeric-answer"]').innerText(), /4 decimal places/);
+      await answer('0.9996');
+      await page.locator('.result-card.correct').waitFor();
+    }
+  }
+  console.log('Passed: exact-half rounding and nonzero display/grading for tiny guided probabilities.');
+
+  for (const path of ['2025/quizzes25.md', '2025/BIPS-Exam-2025.md', 'quizzes/BIPS2026_Q1.pdf', 'syllabus/syllabusWeek1-4.md', 'docs/course-material-map.md', 'docs/quiz-1-2-alignment.md', 'README.md', '.git/config', '%2e%2e%2fREADME.md']) {
+    for (const prefix of [base, `${new URL(base).origin}/`]) {
+      assert.equal((await page.request.get(`${prefix}${path}`)).status(), 404, `Private course source stays outside the public site: ${prefix}${path}`);
+    }
   }
   await noStorage();
+  assert.deepEqual(await page.context().cookies(), [], 'Practice creates no cookies');
+  assert.deepEqual(requests.filter(url => new URL(url).origin !== new URL(base).origin), [], 'Practice makes no third-party requests');
   assert.deepEqual(errors, [], 'No browser exceptions or console errors');
   console.log('Passed: responsive 320/390/768/1440 layouts, source isolation, and no storage access.');
   console.log('All simplified Bayesville browser checks passed. Screenshots saved in .artifacts/.');
