@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { skills, generateQuestion, generateExam } from '../site/questions.js';
 import { gradeAnswer, formatAnswer, roundTo } from '../site/engine.js';
+import { contextualizeQuestion } from '../site/contexts.js';
+import { contextualizeExam } from '../site/exam-contexts.js';
 
 // Audit reference uses BigInt rational arithmetic and factorial beta integrals.
 // It reconstructs every input from the student-visible text and tables rather
@@ -57,9 +59,20 @@ function posterior(ms, s, f) {
 }
 const marginal = (ms, s, f) => sum(ms.map(m => m.weight.mul(likelihood(m, s, f))));
 const pair = (text, expression) => text.match(expression).slice(1).map(Number);
+function conditionsOnColumn(q) {
+  const given = q.prompt.match(/attended (.+?),/)[1].toLowerCase();
+  const labels = [q.table.headers[1], q.table.rows[0][0]].map(value => value.toLowerCase());
+  assert.ok(labels.includes(given), `Conditioning activity must appear in the table: ${given}`);
+  return given === labels[0];
+}
+function selectedModel(q) {
+  const matches = q.table.rows.map(([name], i) => q.prompt.includes(name) ? i : -1).filter(i => i >= 0);
+  assert.equal(matches.length, 1, `${q.id}: prompt must identify exactly one displayed model`);
+  return matches[0];
+}
 function reference(q) {
   if (q.title === 'Posterior probability of a general law' || q.title === 'Evidence for a general law') {
-    const [s, f] = pair(q.context, /sequence D with (\d+) successes and (\d+) failures?/);
+    const [s, f] = pair(q.context, /sequence D with (\d+) success(?:es)? and (\d+) failures?/);
     const [a, b] = pair(q.table.rows[1].at(-1), /Beta\((\d+), (\d+)\)/);
     const law = R(f ? 0 : 1), beta = likelihood({ a, b }, s, f), bf = law.div(beta);
     if (q.skillId === 'bayes-factors') return [bf, [law, beta]];
@@ -83,7 +96,7 @@ function reference(q) {
   if (q.skillId === 'probability') {
     if (q.title === 'Condition on a group') {
       const [[, both, artOnly], [, musicOnly]] = q.table.rows;
-      const denominator = R(both).add(q.prompt.includes('visitor attended music,') ? musicOnly : artOnly);
+      const denominator = R(both).add(conditionsOnColumn(q) ? musicOnly : artOnly);
       return [R(both).div(denominator), [denominator]];
     }
     if (q.title === 'Allow for overlapping events') {
@@ -100,7 +113,9 @@ function reference(q) {
     return [sum(joints), [joints[0]]];
   }
   if (q.skillId === 'bayes') {
-    const ms = models(q), f = q.prompt.includes('failed') ? 1 : 0, s = q.prompt.includes('followed by') ? 1 : f ? 0 : q.prompt.includes('two passed') ? 2 : 1;
+    const ms = models(q), observation = q.prompt.split(',')[0];
+    const f = /fail(?:ed|ure)/.test(observation) ? 1 : 0;
+    const s = observation.includes('followed by') ? 1 : f ? 0 : /two (?:passed|successes)/.test(observation) ? 2 : 1;
     return [posterior(ms, s, f)[0].weight, [ms[0].weight.mul(likelihood(ms[0], s, f)), marginal(ms, s, f)]];
   }
   if (q.skillId === 'sequences') {
@@ -120,17 +135,17 @@ function reference(q) {
   if (q.skillId === 'beta') {
     const [a, b] = pair(q.context, /Beta\((\d+), (\d+)\)/);
     if (q.title.startsWith('Update')) {
-      const [observed, n] = pair(q.prompt, /(\d+) of (\d+) seeds/), first = q.prompt.includes('first parameter');
+      const [observed, n] = pair(q.prompt, /(\d+) of (\d+) (?:seeds|trials)/), first = q.prompt.includes('first parameter');
       return [R((first ? a : b) + n - observed), [R(n - observed)]];
     }
     if (q.title.includes('Laplace')) {
-      const [s, f] = pair(q.prompt, /(\d+) successes and (\d+) failures/);
+      const [s, f] = pair(q.prompt, /(\d+) success(?:es)? and (\d+) failures?/);
       return [R(s + 1).div(s + f + 2), [R(s + 1), R(s + f + 2)]];
     }
-    const history = q.context.match(/observed (\d+) successes and (\d+) failures/);
+    const history = q.context.match(/observed (\d+) success(?:es)? and (\d+) failures?/);
     const aa = a + (history ? +history[1] : 0), bb = b + (history ? +history[2] : 0);
     if (q.title === 'Estimate the success rate') return [R(aa).div(aa + bb), [R(aa), R(bb)]];
-    const [k, n] = pair(q.prompt, /exactly (\d+) successes in the next (\d+)/), c = combination(n, k);
+    const [k, n] = pair(q.prompt, /exactly (\d+) success(?:es)? in the next (\d+)/), c = combination(n, k);
     const seq = likelihood({ a: aa, b: bb }, k, n - k);
     return [seq.mul(c), history ? [R(aa), R(bb), c] : [c, seq]];
   }
@@ -140,7 +155,7 @@ function reference(q) {
     return [sum(values.map((v, i) => v.mul(ms[i].weight))), values];
   }
   if (q.skillId === 'prediction') {
-    const ms = models(q), [s, f] = pair(q.context, /sequence with (\d+) successes and (\d+) failures/), post = posterior(ms, s, f);
+    const ms = models(q), [s, f] = pair(q.context, /sequence with (\d+) success(?:es)? and (\d+) failures?/), post = posterior(ms, s, f);
     if (q.title === 'Learn from several beta forecasters') {
       return [marginal(post, 1, 0), [...ms.map(m => likelihood(m, s, f)), ...post.map(m => m.weight), ...post.map(m => likelihood(m, 1, 0))]];
     }
@@ -149,7 +164,7 @@ function reference(q) {
   }
   assert.equal(q.skillId, 'bayes-factors');
   if (q.title === 'Compare beta forecasters') {
-    const [k, n] = pair(q.context, /exactly (\d+) successes in (\d+) trials/);
+    const [k, n] = pair(q.context, /exactly (\d+) success(?:es)? in (\d+) trials/);
     const values = q.table.rows.map(([, distribution]) => {
       const [a, b] = pair(distribution, /Beta\((\d+), (\d+)\)/);
       return likelihood({ a, b }, k, n - k).mul(combination(n, k));
@@ -157,7 +172,7 @@ function reference(q) {
     const ranked = [...values].sort((a, b) => a.number() - b.number());
     return [ranked[2].div(ranked[0]), values];
   }
-  if (q.context.startsWith('BF_AB')) {
+  if (['Reverse a Bayes factor', 'Link two model comparisons'].includes(q.title)) {
     const ab = R(q.context.match(/BF_AB = (\d+)/)[1]), bc = q.context.match(/BF_BC = (\d+)/);
     return [bc ? ab.mul(R(bc[1])) : R(1).div(ab), []];
   }
@@ -170,19 +185,25 @@ function reference(q) {
     const prior = w.div(R(1).sub(w)), odds = prior.mul(bf);
     return [odds.div(R(1).add(odds)), [prior, odds]];
   }
-  const p = R(q.context.match(/θ = ([\d.]+)/)[1]), [a, b] = pair(q.context, /Beta\((\d+), (\d+)\)/), [s, f] = pair(q.context, /sequence with (\d+) successes and (\d+) failures/);
+  const p = R(q.context.match(/θ = ([\d.]+)/)[1]), [a, b] = pair(q.context, /Beta\((\d+), (\d+)\)/), [s, f] = pair(q.context, /sequence with (\d+) success(?:es)? and (\d+) failures?/);
   const point = likelihood({ p }, s, f), beta = likelihood({ a, b }, s, f);
   return [beta.div(point), [point, beta]];
 }
 function examReference(exam) {
-  const ms = models(exam[0]), [s, f] = pair(exam[0].context, /sequence contains (\d+) successes and (\d+) failures?/);
-  const extraS = exam[2].context.includes('then passes') ? 1 : 0, extraF = 1 - extraS;
-  const post = posterior(ms, s, f), updated = posterior(ms, s + extraS, f + extraF), future = Number(exam[4].prompt.match(/next (\d+) toys/)[1]);
+  const ms = models(exam[0]), [s, f] = pair(exam[0].context, /sequence contains (\d+) success(?:es)? and (\d+) failures?/);
+  const [totalS, totalF] = pair(exam[2].context, /giving (\d+) success(?:es)? and (\d+) failures? in total/);
+  const extraS = totalS - s, extraF = totalF - f;
+  assert.equal(extraS + extraF, 1);
+  assert.ok([0, 1].includes(extraS) && [0, 1].includes(extraF));
+  const target = selectedModel(exam[0]);
+  assert.equal(selectedModel(exam[2]), target);
+  assert.equal(selectedModel(exam[3]), target);
+  const post = posterior(ms, s, f), updated = posterior(ms, totalS, totalF), future = Number(exam[4].prompt.match(/all of the next (\d+)/)[1]);
   return [
-    [post[1].weight, ms.map(m => likelihood(m, s, f))],
+    [post[target].weight, ms.map(m => likelihood(m, s, f))],
     [marginal(post, 1, 0), [post[1].weight, likelihood(post[1], 1, 0)]],
-    [updated[1].weight, post.map(m => likelihood(m, extraS, extraF))],
-    [updated[1].weight, ms.map(m => likelihood(m, s + extraS, f + extraF))],
+    [updated[target].weight, post.map(m => likelihood(m, extraS, extraF))],
+    [updated[target].weight, ms.map(m => likelihood(m, totalS, totalF))],
     [marginal(updated, future, 0), updated.map(m => likelihood(m, future, 0))],
   ];
 }
@@ -265,6 +286,40 @@ test('independent exact rational audit of all linked exam answers and steps', ()
     const exam = generateExam(seed), expected = examReference(exam);
     exam.forEach((q, i) => verifyQuestion(q, expected[i]));
   }
+});
+
+test('each standalone template is independently solvable in all five stories with identical numerical inputs', () => {
+  const seen = new Set();
+  // Context zero retains the original story expected by the narrative adapter.
+  // Re-render the same problem, so story changes cannot hide changed inputs.
+  for (let seed = 0; seed < 2500; seed += 5) for (const skill of skills) {
+    const baseline = generateQuestion(skill.id, seed);
+    if (seen.has(baseline.title)) continue;
+    seen.add(baseline.title);
+    for (let index = 0; index < 5; index++) {
+      const q = contextualizeQuestion(baseline, index);
+      verifyQuestion(q, reference(q));
+      assert.equal(q.answer, baseline.answer);
+      assert.deepEqual(q.steps.map(step => step.answer), baseline.steps.map(step => step.answer));
+    }
+  }
+  assert.equal(seen.size, 27, 'all calculation templates were audited across all five contexts');
+});
+
+test('all three exam targets remain independently solvable in every linked story', () => {
+  const targets = new Set();
+  for (const seed of [0, 5, 10]) {
+    const baseline = generateExam(seed);
+    targets.add(selectedModel(baseline[0]));
+    for (let index = 0; index < 5; index++) {
+      const exam = contextualizeExam(baseline, index), expected = examReference(exam);
+      exam.forEach((q, i) => {
+        verifyQuestion(q, expected[i]);
+        assert.equal(q.answer, baseline[i].answer);
+      });
+    }
+  }
+  assert.deepEqual([...targets].sort(), [0, 1, 2]);
 });
 
 test('beta-binomial rounding agrees with exact factorial ratios throughout generated parameter range', async () => {

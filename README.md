@@ -1,4 +1,4 @@
-# Bayesville
+# Probability Playground
 
 Calculation practice for Bayesian Inference for Psychology. The autumn watercolor village opens onto seven skills and linked exam scenarios. Choose a calculation and start immediately. Each new question has fresh numbers.
 
@@ -14,6 +14,8 @@ Calculation practice for Bayesian Inference for Psychology. The autumn watercolo
 - **Exam practice:** five linked calculations: identify a source, predict, update with another observation, correct the order of the same observations, then predict several future observations jointly.
 
 There is one practice stream per skill, with no difficulty or session-length choices. Each question has optional guided numerical steps, hints, a worked solution, and a course-book reference. Students can check an answer or reveal the solution after working on paper. “Another question” generates fresh numbers; exam practice moves through five linked parts and then offers a new scenario. These questions practise the skills assessed in the supplied course materials; they are not copies of the original assessment questions.
+
+Every calculation family has five story settings, including its original setting. “Another question” changes the setting as well as the numbers. Each linked exam keeps one story, source table, and observed history across all five parts; a new exam changes the setting. The source requested in the model-probability questions also varies. All stories state the assumptions needed for their calculations, including shared rates and conditional independence where relevant.
 
 The streams also include central calculations from the assigned book chapters. General-law exercises distinguish the probability of a law from the probability of the next success, including unequal model priors and failures that rule out the stated error-free law. Sequential evidence exercises update parameter distributions between batches. Beta-forecaster exercises offer guided checks of every posterior model weight and within-model prediction before averaging. These additions use the existing seven cards and do not change the five-part exam scenario.
 
@@ -36,7 +38,7 @@ For browser checks, start the preview and run `node tests/browser.mjs` with Play
 
 1. Commit the platform files and push to `main` in `hrgodmann/BayesianInferenceForPsychology`.
 2. Under **Settings → Pages → Build and deployment**, select **GitHub Actions**.
-3. Run **Publish Bayesville** under Actions, or push a change to `main`.
+3. Run **Publish Probability Playground** under Actions, or push a change to `main`.
 4. Wait for a successful deployment at [hrgodmann.github.io/BayesianInferenceForPsychology/](https://hrgodmann.github.io/BayesianInferenceForPsychology/).
 
 The workflow runs the unit tests and publishes only `site/`. It excludes the book, original assessments (including `2025/`), syllabus, and instructor notes. These source folders are also ignored by Git. Local edits alone do not update the published site.
@@ -45,6 +47,7 @@ The workflow runs the unit tests and publishes only `site/`. It excludes the boo
 
 - `site/math.js` contains binomial/beta predictive probabilities, model updating, and model-averaged prediction. Posterior weights are normalized in log space. Joint predictions integrate a shared unknown rate, rather than substituting its mean.
 - `site/questions.js` exports the skill catalog, `generateQuestion(skillId, seed)`, and `generateExam(seed)`. Each question includes a full-precision answer, units, display precision, numerical working steps, hints, and source metadata.
+- `site/contexts.js` and `site/exam-contexts.js` apply the five story settings to the complete question, including its tables, hints, guided steps, and explanation. Story selection does not consume the numerical generator's random stream. Context IDs are internal verification metadata, not saved progress.
 - `site/engine.js` handles numeric parsing, rounding, and grading.
 - `site/app.js` renders the interface. All assets use relative paths; the site works under a GitHub Pages repository path.
 

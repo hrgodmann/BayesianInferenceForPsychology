@@ -28,8 +28,9 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
 .icon-button.is-bookmarked { background: #eddbb7; border-color: #b99a66; }
 .icon-button.is-bookmarked .icon { fill: #d5ac6e; }
 .site-header { background: #f9f0df; border-bottom: 1px solid #d4bf9c; }
-.nav-inner { min-height: 88px; max-width: 1300px; flex-wrap: wrap; row-gap: 6px; padding: 14px 0; }
-.brand { font-family: var(--serif); font-size: 2rem; font-weight: 600; letter-spacing: -.055em; gap: 12px; }
+.nav-inner { min-height: 88px; max-width: 1300px; flex-wrap: nowrap; row-gap: 6px; padding: 14px 0; }
+.brand { font-family: var(--serif); font-size: 2rem; font-weight: 600; letter-spacing: -.055em; gap: 12px; min-width: 0; }
+.brand-name { min-width: 0; line-height: 1.05; text-wrap: balance; }
 .brand-mark {
   background: #8d3d28;
   color: #fff5df;
@@ -37,12 +38,14 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
   height: 37px;
   border-radius: 50%;
   border: 3px double #f9e4be;
-  font-size: 1.85rem;
+  flex: none;
+  font-size: 1.05rem;
+  letter-spacing: -.08em;
   font-style: italic;
-  padding: 0 3px 4px 0;
+  padding: 0 2px 1px 0;
   transform: rotate(-8deg);
 }
-.site-header nav { color: #6c5438; font-size: .88rem; gap: 34px; flex-wrap: wrap; }
+.site-header nav { color: #6c5438; font-size: .88rem; gap: 34px; flex-wrap: wrap; flex: none; }
 .site-header nav a[aria-current]::after { height: 1px; background: #8d3d28; }
 
 /* The source artwork stays intact. Text sits in its open parchment sky. */
@@ -205,7 +208,7 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
   .site-header nav { gap: 20px; font-size: .8rem; }
   .hero { min-height: 280px; }
   .hero-copy { width: 46%; margin-left: 51%; padding: 57px 12px 30px 0; }
-  .hero h1 { font-size: 3rem; }
+  .hero h1 { font-size: clamp(2rem, 5.5vw, 3rem); }
   .hero-lede { font-size: .85rem; max-width: 270px; }
   .hero-art img { object-position: center bottom; }
   .section-heading { display: flex; }
@@ -223,11 +226,11 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
 @media (max-width: 560px) {
   .nav-inner { min-height: 73px; gap: 12px; }
   .brand { font-size: 1.55rem; gap: 8px; }
-  .brand-mark { width: 30px; height: 30px; font-size: 1.55rem; border-width: 2px; padding-bottom: 3px; }
+  .brand-mark { width: 30px; height: 30px; font-size: .9rem; border-width: 2px; }
   .site-header nav { font-size: .71rem; gap: 16px; }
   .hero { min-height: 260px; background: #f9edcf; }
   .hero-copy { width: 60%; margin-left: 38%; max-width: none; padding: 25px 8px 0; text-align: center; }
-  .hero h1 { font-size: 2.4rem; line-height: 1.07; margin: 0 0 10px; letter-spacing: -.05em; }
+  .hero h1 { font-size: clamp(1.85rem, 7vw, 2.4rem); line-height: 1.07; margin: 0 0 10px; letter-spacing: -.05em; }
   .hero-lede { font-size: .75rem; line-height: 1.5; margin: 0 auto; max-width: 190px; }
   .hero-art { inset: 0; height: 100%; width: 100%; }
   .hero-art img { width: 100%; height: 100%; object-fit: cover; object-position: 60% bottom; mask-image: none; }
@@ -273,11 +276,11 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
 @media (max-width: 360px) {
   .nav-inner { width: calc(100% - 26px); gap: 9px; }
   .brand { font-size: 1.42rem; gap: 6px; }
-  .brand-mark { width: 26px; height: 26px; font-size: 1.35rem; }
+  .brand-mark { width: 26px; height: 26px; font-size: .8rem; }
   .site-header nav { gap: 11px; font-size: .64rem; }
   .hero { min-height: 230px; }
   .hero-copy { padding-left: 6px; padding-right: 6px; }
-  .hero h1 { font-size: 2.1rem; }
+  .hero h1 { font-size: 1.85rem; }
   .card-bottom { font-size: .72rem; }
   .chapter-card { padding: 23px 20px; }
   .mode-option strong { font-size: .68rem; }

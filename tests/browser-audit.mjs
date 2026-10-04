@@ -2,7 +2,7 @@
 // as browser.mjs; no dependencies are installed and no remote site is modified.
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
-import { generateQuestion, skills } from '../site/questions.js';
+import { generateQuestion, generateExam, skills } from '../site/questions.js';
 import { formatAnswer } from '../site/engine.js';
 
 const { chromium } = await import(process.env.BAYESVILLE_PLAYWRIGHT_MODULE || 'playwright');
@@ -19,7 +19,7 @@ const cases = new Map();
 for (const skill of skills) for (let seed = 0; seed < 1000; seed++) {
   const q = generateQuestion(skill.id, seed);
   const prompt = q.prompt.replace(/\d+(?:\.\d+)?/g, '#').replace(/\b[SF](?:,\s*[SF])*/g, 'sequence');
-  const signature = [skill.id, q.title, prompt, q.table?.rows.length || 0, q.steps.map(s => s.unit).join(',')].join('|');
+  const signature = [skill.id, q.contextId, q.title, prompt, q.table?.rows.length || 0, q.steps.map(s => s.unit).join(',')].join('|');
   if (!cases.has(signature)) cases.set(signature, { skillId: skill.id, seed, q });
 }
 const longCase = [...cases.values()].find(({ q }) => q.title === 'Learn from several beta forecasters' && q.table.rows.length === 3);
@@ -43,7 +43,9 @@ async function tabTo(selector) {
 }
 async function visibleFocus(selector) {
   await page.waitForFunction(selector => {
-    const element = document.querySelector(selector), rect = element.getBoundingClientRect();
+    const element = document.querySelector(selector);
+    if (!element) return false; // Hash navigation renders on the next event turn.
+    const rect = element.getBoundingClientRect();
     return document.activeElement === element && rect.top >= -1 && rect.bottom <= innerHeight + 1;
   }, selector);
 }
@@ -132,6 +134,38 @@ try {
   }
   console.log(`Passed: all ${cases.size} distinct generated presentation shapes at 320px (titles, prompt variants, row counts, guided units).`);
 
+  // Every story must remain consistent across the linked exam, including the
+  // prompt, table, hints, guided calculations, and the final worked solution.
+  for (let seed = 0; seed < 5; seed++) {
+    const exam = generateExam(seed);
+    await page.goto(`${base}#skills`);
+    await page.locator('[data-action="exam"]').waitFor();
+    await page.evaluate(seed => Object.defineProperty(crypto, 'getRandomValues', {
+      configurable: true, value(array) { array.fill(seed); return array; },
+    }), seed);
+    await page.locator('[data-action="exam"]').click();
+    for (const [part, q] of exam.entries()) {
+      await page.locator('.question-card').waitFor();
+      assert.equal(await page.locator('.question-context').innerText(), q.context);
+      assert.equal(await page.locator('.question-prompt').innerText(), q.prompt);
+      const rows = await page.locator('tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent)));
+      assert.deepEqual(rows, q.table.rows.map(row => row.map(String)));
+      await page.locator('[data-action="hint"]').click();
+      assert.ok((await page.locator('#hint-panel').innerText()).includes(q.hints[0]));
+      await page.locator('[data-action="toggle-guided"]').click();
+      await noOverflow(`Exam ${seed}, part ${part + 1}: guidance`);
+      await page.locator('#numeric-answer').fill(formatAnswer(q));
+      await page.locator('#numeric-answer').press('Enter');
+      await page.locator('.result-card.correct').waitFor();
+      assert.equal(await page.locator('.explanation').innerText(), q.explanation);
+      await noOverflow(`Exam ${seed}, part ${part + 1}: result`);
+      if (part === 4) await page.screenshot({ path: `.artifacts/story-exam-${seed}-320.png`, fullPage: true });
+      await page.locator('[data-action="next"]').click();
+    }
+    assert.notEqual(await page.locator('.question-context').innerText(), exam[0].context, 'New scenario changes the story');
+  }
+  console.log('Passed: all five exam stories, every linked part, hints, worked solutions, and fresh scenarios at 320px.');
+
   await openCase(longCase);
   await page.locator('[data-action="toggle-guided"]').click();
   for (const selector of ['#numeric-answer', '#step-0']) {
@@ -151,7 +185,7 @@ try {
     }
   }
   for (const root of [base, `${new URL(base).origin}/`]) {
-    for (const [path, mime] of [['', 'text/html'], ['app.js', 'text/javascript'], ['questions.js', 'text/javascript'], ['styles.css', 'text/css'], ['assets/autumn-village.png', 'image/png'], ['assets/favicon.svg', 'image/svg+xml']]) {
+    for (const [path, mime] of [['', 'text/html'], ['app.js', 'text/javascript'], ['questions.js', 'text/javascript'], ['contexts.js', 'text/javascript'], ['exam-contexts.js', 'text/javascript'], ['styles.css', 'text/css'], ['assets/autumn-village.png', 'image/png'], ['assets/favicon.svg', 'image/svg+xml']]) {
       const response = await page.request.get(`${root}${path}`);
       assert.equal(response.status(), 200);
       assert.ok(response.headers()['content-type'].startsWith(mime));

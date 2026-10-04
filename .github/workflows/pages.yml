@@ -1,4 +1,4 @@
-name: Publish Bayesville
+name: Publish Probability Playground
 
 on:
   push:

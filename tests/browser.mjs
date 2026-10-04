@@ -227,12 +227,22 @@ try {
   await click('about');
   assert.equal(await page.locator('#modal').evaluate(dialog => dialog.open), true);
   assert.equal(await page.evaluate(() => document.activeElement.dataset.action), 'close-modal');
-  await page.keyboard.press('Tab');
-  // Chromium may briefly hand focus to browser chrome after the only dialog
-  // control. Background page controls must remain unreachable while modal.
-  assert.equal(await page.locator('#modal').evaluate(dialog => dialog.contains(document.activeElement) || document.activeElement === document.body), true, 'Help prevents focus from reaching background page controls');
-  await page.keyboard.press('Tab');
-  assert.equal(await page.locator('#modal').evaluate(dialog => dialog.contains(document.activeElement)), true, 'Tab returns to the modal control');
+  // A native dialog can hand focus to browser chrome, whose tab-stop count
+  // varies by Chromium build. Check containment and bounded return instead
+  // of assuming exactly two Tab presses form one complete focus cycle.
+  for (const key of ['Tab', 'Tab', 'Tab', 'Shift+Tab']) {
+    let returned = false;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await page.keyboard.press(key);
+      const focus = await page.locator('#modal').evaluate(dialog => ({
+        inside: dialog.contains(document.activeElement),
+        chrome: document.activeElement === document.body && !document.hasFocus(),
+      }));
+      assert.ok(focus.inside || focus.chrome, 'Help prevents focus from reaching background page controls');
+      if (focus.inside) { returned = true; break; }
+    }
+    assert.ok(returned, 'Keyboard focus returns from browser chrome to the modal control');
+  }
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#modal').evaluate(dialog => dialog.open), false);
   assert.equal(await page.evaluate(() => document.activeElement.dataset.action), 'about', 'Escape returns focus to Help');
@@ -390,7 +400,7 @@ try {
   assert.deepEqual(requests.filter(url => new URL(url).origin !== new URL(base).origin), [], 'Practice makes no third-party requests');
   assert.deepEqual(errors, [], 'No browser exceptions or console errors');
   console.log('Passed: responsive 320/390/768/1440 layouts, source isolation, and no storage access.');
-  console.log('All simplified Bayesville browser checks passed. Screenshots saved in .artifacts/.');
+  console.log('All simplified Probability Playground browser checks passed. Screenshots saved in .artifacts/.');
 } catch (error) {
   await page.screenshot({ path: '.artifacts/simplified-failure.png', fullPage: true }).catch(() => {});
   throw error;

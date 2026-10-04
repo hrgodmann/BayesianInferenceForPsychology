@@ -62,7 +62,7 @@ try {
 
   const cases = new Map();
   for (const skill of skills) for (let seed = 0; seed < 1000; seed++) {
-    const q = generateQuestion(skill.id, seed), key = `${skill.id}:${q.title}`;
+    const q = generateQuestion(skill.id, seed), key = `${skill.id}:${q.contextId}:${q.title}`;
     if (!cases.has(key)) cases.set(key, { skill: skill.id, seed, title: q.title, answer: formatAnswer(q) });
   }
   for (const item of cases.values()) {

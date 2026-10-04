@@ -1,6 +1,8 @@
 import { choose, fixedSequence, betaSequence, betaCount, updateModels, predictModels } from './math.js';
+import { contextualizeQuestion } from './contexts.js';
+import { contextualizeExam } from './exam-contexts.js';
 
-export const GENERATOR_VERSION = 5;
+export const GENERATOR_VERSION = 6;
 export const skills = [
   { id: 'probability', title: 'Probability rules', description: 'Work with conditional and combined probabilities.', icon: 'tree' },
   { id: 'bayes', title: 'Bayes’ rule', description: 'Update which explanation is most likely.', icon: 'cycle' },
@@ -75,6 +77,24 @@ function finish(skillId, seed, item, suffix = '') {
     id: `v${GENERATOR_VERSION}-${skillId}-${seed >>> 0}${suffix}`, seed: seed >>> 0,
     skillId, unit: 'probability', decimals: precision(item.answer), ...item,
   };
+}
+
+// Apply count grammar after the story's vocabulary is chosen. Only visible
+// text is visited; numeric answers, seeds, and source records are untouched.
+function polishQuestion(question) {
+  const polish = value => {
+    if (typeof value === 'string') return value
+      .replace(/\b1 successes\b/g, '1 success')
+      .replace(/\b1 failures\b/g, '1 failure')
+      .replace(/\b1 detections\b/g, '1 detection')
+      .replace(/\b(1 of (?:the first )?\d+ (?:seeds|trials)) (fail to germinate|germinate|fail|succeed)\b/g,
+        (_, subject, verb) => `${subject} ${{ 'fail to germinate': 'fails to germinate', germinate: 'germinates', fail: 'fails', succeed: 'succeeds' }[verb]}`);
+    if (Array.isArray(value)) return value.map(polish);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, polish(item)]));
+    return value;
+  };
+  return { ...question, ...Object.fromEntries(['title', 'context', 'prompt', 'table', 'hints', 'steps', 'explanation']
+    .filter(key => key in question).map(key => [key, polish(question[key])])) };
 }
 
 function probability(rng) {
@@ -460,7 +480,9 @@ export function generateQuestion(skillId, seed) {
   validate(skillId, seed);
   // A per-skill salt makes the same seed vary independently across skills.
   const salt = skills.findIndex(s => s.id === skillId) * 0x9E3779B9;
-  return finish(skillId, seed, generators[skillId](random((seed + salt) >>> 0)));
+  // Story selection does not consume the numerical generator's random stream.
+  // The app's uint32 seed increment changes seed % 5 on every new question.
+  return polishQuestion(contextualizeQuestion(finish(skillId, seed, generators[skillId](random((seed + salt) >>> 0))), seed % 5));
 }
 
 export function generateExam(seed) {
@@ -471,6 +493,9 @@ export function generateExam(seed) {
     { name: 'Garden workshop', type: 'beta', weight: ws[1], a: integer(rng, 2, 5), b: integer(rng, 2, 5) },
   ];
   models.push({ name: 'Meadow workshop', type: 'fixed', weight: ws[2], p: pick(rng, [0.2, 0.3, 0.5, 0.7, 0.8].filter(p => p !== models[0].p)) });
+  // Cycle the requested source independently of the five story settings.
+  const targetIndex = Math.floor(seed / 5) % models.length;
+  const target = models[targetIndex];
   const s = integer(rng, 2, 4), fails = integer(rng, 1, 3);
   const extraS = integer(rng, 0, 1), extraF = 1 - extraS;
   const post = updateModels(models, s, fails), extraPost = updateModels(models, s + extraS, fails + extraF);
@@ -485,10 +510,10 @@ export function generateExam(seed) {
   const items = [
     {
       ...common, title: '1. Identify the workshop', context: intro,
-      prompt: 'After the first sequence, what is the probability that the box came from the Garden workshop?', answer: post[1].weight,
+      prompt: `After the first sequence, what is the probability that the box came from the ${target.name}?`, answer: post[targetIndex].weight,
       hints: ['Calculate the sequence probability under each workshop.', 'Weight each likelihood by its prior model probability and normalize.'],
       steps: modelLikelihoodSteps(models, s, fails),
-      explanation: `P(Garden | first sequence) = ${posteriorWorking(models, s, fails, 1)} = ${f(post[1].weight)}. Within Garden, the posterior is Beta(${post[1].a}, ${post[1].b}).`,
+      explanation: `P(${target.name} | first sequence) = ${posteriorWorking(models, s, fails, targetIndex)} = ${f(post[targetIndex].weight)}. Within Garden, the posterior is Beta(${post[1].a}, ${post[1].b}).`,
     },
     {
       ...common, title: '2. Predict the next inspection', context: intro,
@@ -499,18 +524,18 @@ export function generateExam(seed) {
     },
     {
       ...common, title: '3. Update after another observation', context: later,
-      prompt: 'What is the updated probability that the box came from the Garden workshop?', answer: extraPost[1].weight,
+      prompt: `What is the updated probability that the box came from the ${target.name}?`, answer: extraPost[targetIndex].weight,
       hints: ['Use the previous posterior as the prior for this new observation.', 'Predict the new outcome within each updated workshop model, then normalize their weighted predictions.'],
       steps: post.map(m => step(`Probability of the additional ${extraS ? 'pass' : 'failure'} under ${m.name}`, likelihood(m, extraS, extraF), 'Use the posterior predictive probability within this model', `${sequenceWorking(m, extraS, extraF)} = ${f(likelihood(m, extraS, extraF))}`)),
-      explanation: `P(Garden | all observations) = ${f(post[1].weight)} × ${f(likelihood(post[1], extraS, extraF))} / (${mixtureWorking(post, post.map(m => likelihood(m, extraS, extraF)))}) = ${f(extraPost[1].weight)}. Equivalently update the original priors with all ${s + extraS} successes and ${fails + extraF} failures.`,
+      explanation: `P(${target.name} | all observations) = ${f(post[targetIndex].weight)} × ${f(likelihood(post[targetIndex], extraS, extraF))} / (${mixtureWorking(post, post.map(m => likelihood(m, extraS, extraF)))}) = ${f(extraPost[targetIndex].weight)}. Equivalently update the original priors with all ${s + extraS} successes and ${fails + extraF} failures.`,
     },
     {
       ...common, title: '4. Correct the order of the observations',
       context: `${later} You discover that these same toys were recorded in the wrong order. The corrected order is (${correctedOrder.join(', ')}). No extra toys have been inspected.`,
-      prompt: 'With the corrected order, what is the probability that the box came from the Garden workshop?', answer: extraPost[1].weight,
+      prompt: `With the corrected order, what is the probability that the box came from the ${target.name}?`, answer: extraPost[targetIndex].weight,
       hints: ['Count successes and failures in the corrected sequence. Has either count changed?', 'With a shared constant rate and conditional independence, each model assigns the same probability to every order with these counts. Do not treat the correction as new data.'],
       steps: modelLikelihoodSteps(models, s + extraS, fails + extraF),
-      explanation: `The corrected sequence still contains ${s + extraS} successes and ${fails + extraF} failure${fails + extraF === 1 ? '' : 's'}. Under each fixed-rate model its probability is θ^s(1 − θ)^f; integrating this same expression under Garden also depends only on the counts. Thus P(Garden | corrected sequence) = ${posteriorWorking(models, s + extraS, fails + extraF, 1)} = ${f(extraPost[1].weight)}, unchanged from part 3. The working groups successes first to evaluate the likelihood from the counts. This is one specified order, so no binomial coefficient is needed. Order invariance follows from the models stated here; it is not a rule for every time-dependent process.`,
+      explanation: `The corrected sequence still contains ${s + extraS} successes and ${fails + extraF} failure${fails + extraF === 1 ? '' : 's'}. Under each fixed-rate model its probability is θ^s(1 − θ)^f; integrating this same expression under Garden also depends only on the counts. Thus P(${target.name} | corrected sequence) = ${posteriorWorking(models, s + extraS, fails + extraF, targetIndex)} = ${f(extraPost[targetIndex].weight)}, unchanged from part 3. The working groups successes first to evaluate the likelihood from the counts. This is one specified order, so no binomial coefficient is needed. Order invariance follows from the models stated here; it is not a rule for every time-dependent process.`,
     },
     {
       ...common, title: '5. Predict several future inspections', context: later,
@@ -520,5 +545,5 @@ export function generateExam(seed) {
       explanation: `Posterior workshop weights are ${extraPost.map(m => `${m.name}: ${f(m.weight)}`).join(', ')}. Garden’s joint prediction is ${betaProduct(extraPost[1].a, extraPost[1].b, future, 0)} = ${f(likelihood(extraPost[1], future, 0))}. P(all ${future} pass | all data) = ${mixtureWorking(extraPost, extraPost.map(m => likelihood(m, future, 0)))} = ${f(joint)}. Each beta predictive factor updates after the preceding success; future outcomes share the same workshop and rate.`,
     },
   ];
-  return items.map((item, i) => finish('prediction', seed, item, `-exam-${i + 1}`));
+  return contextualizeExam(items.map((item, i) => finish('prediction', seed, item, `-exam-${i + 1}`)), seed % 5).map(polishQuestion);
 }

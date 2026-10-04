@@ -52,8 +52,19 @@ function posterior(models, s, f) {
   return models.map((model, i) => ({ ...model, weight: raw[i] / sum, ...('a' in model ? { a: model.a + s, b: model.b + f } : {}) }));
 }
 function predict(models, s, f) { return models.reduce((sum, model) => sum + model.weight * sequence(model, s, f), 0); }
+function conditionsOnColumn(q) {
+  const given = q.prompt.match(/attended (.+?),/)[1].toLowerCase();
+  const labels = [q.table.headers[1], q.table.rows[0][0]].map(value => value.toLowerCase());
+  assert.ok(labels.includes(given), `Conditioning activity must appear in the table: ${given}`);
+  return given === labels[0];
+}
+function selectedModel(q) {
+  const matches = q.table.rows.map(([name], i) => q.prompt.includes(name) ? i : -1).filter(i => i >= 0);
+  assert.equal(matches.length, 1, `${q.id}: prompt must identify exactly one displayed model`);
+  return matches[0];
+}
 function lawData(q) {
-  const [, s, f] = q.context.match(/sequence D with (\d+) successes and (\d+) failures?/).map(Number);
+  const [, s, f] = q.context.match(/sequence D with (\d+) success(?:es)? and (\d+) failures?/).map(Number);
   const [, a, b] = q.table.rows[1].at(-1).match(/Beta\((\d+), (\d+)\)/).map(Number);
   const beta = sequence({ a, b }, s, f), law = f ? 0 : 1;
   return { s, f, a, b, beta, law, bf: law / beta };
@@ -78,7 +89,7 @@ function batchData(q) {
 
 
 test('seven assessed skills generate complete, varied numerical questions in one stream', () => {
-  assert.equal(GENERATOR_VERSION, 5);
+  assert.equal(GENERATOR_VERSION, 6);
   assert.equal(skills.length, 7);
   const ids = new Set();
   for (const skill of skills) for (let seed = 0; seed < 480; seed++) {
@@ -107,10 +118,10 @@ test('probability rules agree with valid event and table arithmetic', () => {
       const [[, both, artOnly], [, musicOnly, neither]] = rows;
       assert.ok([both, artOnly, musicOnly, neither].every(n => Number.isInteger(n) && n >= 0));
       assert.equal(both + artOnly + musicOnly + neither, 100);
-      const givenMusic = q.prompt.includes('visitor attended music,');
-      const denominator = both + (givenMusic ? musicOnly : artOnly);
+      const givenColumn = conditionsOnColumn(q);
+      const denominator = both + (givenColumn ? musicOnly : artOnly);
       near(q.answer, both / denominator);
-      variants.add(givenMusic ? 'conditional-music' : 'conditional-art');
+      variants.add(givenColumn ? 'conditional-column' : 'conditional-row');
       continue;
     }
     if (q.title === 'Allow for overlapping events') {
@@ -126,7 +137,7 @@ test('probability rules agree with valid event and table arithmetic', () => {
     if (backwards) near(total, Number(q.prompt.match(/probability is ([\d.]+)/)[1].replace(/\.$/, '')));
     else near(q.answer, total);
   }
-  assert.deepEqual([...variants].sort(), ['conditional-art', 'conditional-music', 'missing', 'total-2', 'total-3', 'union']);
+  assert.deepEqual([...variants].sort(), ['conditional-column', 'conditional-row', 'missing', 'total-2', 'total-3', 'union']);
 });
 
 test('sequence, count, and tail variants agree with enumeration of ordered outcomes', () => {
@@ -159,7 +170,7 @@ test('joint prediction updates both shared model identity and uncertain rate', (
   const variants = new Set();
   for (let seed = 0; seed < 300; seed++) {
     const q = generateQuestion('prediction', seed);
-    const [, s, failures] = q.context.match(/sequence with (\d+) successes and (\d+) failures/).map(Number);
+    const [, s, failures] = q.context.match(/sequence with (\d+) success(?:es)? and (\d+) failures?/).map(Number);
     const models = parseModels(q), post = posterior(models, s, failures);
     if (q.title === 'Learn from several beta forecasters') {
       assert.ok(models.every(m => 'a' in m));
@@ -191,22 +202,28 @@ test('linked three-model exams are reproducible and all five answers stay consis
     assert.equal(exam.length, 5);
     assert.equal(new Set(exam.map(q => q.id)).size, 5);
     exam.forEach(inspect);
-    const [, s, failures] = exam[0].context.match(/sequence contains (\d+) successes and (\d+) failures?/).map(Number);
+    const [, s, failures] = exam[0].context.match(/sequence contains (\d+) success(?:es)? and (\d+) failures?/).map(Number);
     const models = parseModels(exam[0]), post = posterior(models, s, failures);
     assert.equal(models.length, 3);
     assert.ok('a' in models[1]);
     assert.notEqual(models[0].p, models[2].p);
     assert.equal(exam[4].steps.length, 3);
-    assert.match(exam[4].explanation, /Meadow workshop/);
+    models.forEach(model => assert.ok(exam[4].explanation.includes(model.name), `Joint prediction includes ${model.name}`));
     assert.match(exam[4].explanation, /\(\d+\/\d+\) × \(\d+\/\d+\)/);
-    const extraS = exam[2].context.includes('additional toy then passes') ? 1 : 0;
-    const future = Number(exam[4].prompt.match(/next (\d+) toys/)[1]);
+    const [, totalS, totalF] = exam[2].context.match(/giving (\d+) success(?:es)? and (\d+) failures? in total/).map(Number);
+    const extraS = totalS - s;
+    assert.ok([0, 1].includes(extraS));
+    assert.equal(totalS + totalF, s + failures + 1);
+    const target = selectedModel(exam[0]);
+    assert.equal(selectedModel(exam[2]), target);
+    assert.equal(selectedModel(exam[3]), target);
+    const future = Number(exam[4].prompt.match(/all of the next (\d+)/)[1]);
     variants.add(`${extraS}-${future}`);
     const updated = posterior(models, s + extraS, failures + 1 - extraS);
-    near(exam[0].answer, post[1].weight);
+    near(exam[0].answer, post[target].weight);
     near(exam[1].answer, predict(post, 1, 0));
-    near(exam[2].answer, updated[1].weight);
-    near(exam[3].answer, updated[1].weight);
+    near(exam[2].answer, updated[target].weight);
+    near(exam[3].answer, updated[target].weight);
     assert.equal(exam[3].answer, exam[2].answer);
     assert.match(exam[3].context, /corrected order/);
     const corrected = exam[3].context.match(/corrected order is \(([^)]+)\)/)[1].split(', ');
@@ -227,8 +244,9 @@ test('Bayes reversal and prior mixtures normalize and average the stated models'
       near(q.answer, posterior(parseModels(q), s, f)[0].weight);
       bayesVariants.add('law');
     } else {
-      const failures = q.prompt.includes('failed inspection') ? 1 : 0;
-      const successes = q.prompt.includes('followed by') ? 1 : failures ? 0 : q.prompt.includes('two passed') ? 2 : 1;
+      const observation = q.prompt.split(',')[0];
+      const failures = /fail(?:ed|ure)/.test(observation) ? 1 : 0;
+      const successes = observation.includes('followed by') ? 1 : failures ? 0 : /two (?:passed|successes)/.test(observation) ? 2 : 1;
       const bayesModels = parseModels(q);
       bayesVariants.add(`${bayesModels.length}-${successes}-${failures}`);
       near(q.answer, posterior(bayesModels, successes, failures)[0].weight);
@@ -251,25 +269,25 @@ test('beta variants update parameters and integrate the shared unknown rate', ()
     const q = generateQuestion('beta', seed);
     if (q.title === 'Update a beta distribution') {
       const [, a, b] = q.context.match(/Beta\((\d+), (\d+)\)/).map(Number);
-      const [, observed, n] = q.prompt.match(/(\d+) of (\d+) seeds/).map(Number);
+      const [, observed, n] = q.prompt.match(/(\d+) of (\d+) (?:seeds|trials)/).map(Number);
       const successParameter = q.prompt.includes('first parameter');
       variants.add(successParameter ? 'update-a' : 'update-b');
       near(q.answer, (successParameter ? a : b) + n - observed);
     } else if (q.title.includes('Laplace')) {
-      const [, s, failures] = q.prompt.match(/(\d+) successes and (\d+) failures/).map(Number);
+      const [, s, failures] = q.prompt.match(/(\d+) success(?:es)? and (\d+) failures?/).map(Number);
       near(q.answer, (s + 1) / (s + failures + 2));
       variants.add(failures === 0 ? 'laplace-all' : 'laplace-mixed');
     } else if (q.title === 'Estimate the success rate') {
       const [, a, b] = q.context.match(/Beta\((\d+), (\d+)\)/).map(Number);
-      const [, s, f] = q.context.match(/observed (\d+) successes and (\d+) failures/).map(Number);
+      const [, s, f] = q.context.match(/observed (\d+) success(?:es)? and (\d+) failures?/).map(Number);
       near(q.answer, (a + s) / (a + b + s + f));
       variants.add('posterior-mean');
     } else {
       const [, a, b] = q.context.match(/Beta\((\d+), (\d+)\)/).map(Number);
-      const history = q.context.match(/observed (\d+) successes and (\d+) failures/);
+      const history = q.context.match(/observed (\d+) success(?:es)? and (\d+) failures?/);
       variants.add(history ? 'posterior' : 'prior');
       const model = { a: a + (history ? Number(history[1]) : 0), b: b + (history ? Number(history[2]) : 0) };
-      const [, k, n] = q.prompt.match(/exactly (\d+) successes in the next (\d+)/).map(Number);
+      const [, k, n] = q.prompt.match(/exactly (\d+) success(?:es)? in the next (\d+)/).map(Number);
       let probability = 0;
       for (let bits = 0; bits < 2 ** n; bits++) if (bits.toString(2).replaceAll('0', '').length === k) probability += sequence(model, k, n - k);
       near(q.answer, probability);
@@ -291,7 +309,7 @@ test('Bayes factor orientation and probability-to-odds conversions are consisten
       const total = q.title.startsWith('Combine');
       near(q.answer, total ? jointBF : secondBF);
       variants.add(total ? 'sequential-total' : 'sequential');
-    } else if (q.context.startsWith('BF_AB')) {
+    } else if (['Reverse a Bayes factor', 'Link two model comparisons'].includes(q.title)) {
       const first = Number(q.context.match(/BF_AB = (\d+)/)[1]);
       const second = q.context.match(/BF_BC = (\d+)/);
       variants.add(second ? 'transitivity' : 'reciprocal');
@@ -307,7 +325,7 @@ test('Bayes factor orientation and probability-to-odds conversions are consisten
       near(q.answer, prior * bf / (prior * bf + 1 - prior));
       variants.add('odds');
     } else if (q.title === 'Compare beta forecasters') {
-      const [, k, n] = q.context.match(/exactly (\d+) successes in (\d+) trials/).map(Number);
+      const [, k, n] = q.context.match(/exactly (\d+) success(?:es)? in (\d+) trials/).map(Number);
       const predictions = q.table.rows.map(([, prior]) => {
         const [, a, b] = prior.match(/Beta\((\d+), (\d+)\)/).map(Number);
         return sequence({ a, b }, k, n - k);
@@ -318,7 +336,7 @@ test('Bayes factor orientation and probability-to-odds conversions are consisten
     } else {
       const p = Number(q.context.match(/θ = ([\d.]+)/)[1].replace(/\.$/, ''));
       const [, a, b] = q.context.match(/Beta\((\d+), (\d+)\)/).map(Number);
-      const [, s, failures] = q.context.match(/sequence with (\d+) successes and (\d+) failures/).map(Number);
+      const [, s, failures] = q.context.match(/sequence with (\d+) success(?:es)? and (\d+) failures?/).map(Number);
       near(q.answer, sequence({ a, b }, s, failures) / sequence({ p }, s, failures));
       variants.add('marginal');
     }
@@ -385,7 +403,7 @@ test('beta forecaster prediction updates both distributions and model weights be
   for (let seed = 0; seed < 1200; seed++) {
     const q = generateQuestion('prediction', seed);
     if (q.title !== 'Learn from several beta forecasters') continue;
-    const [, s, f] = q.context.match(/sequence with (\d+) successes and (\d+) failures/).map(Number);
+    const [, s, f] = q.context.match(/sequence with (\d+) success(?:es)? and (\d+) failures?/).map(Number);
     const ms = parseModels(q), post = posterior(ms, s, f), means = post.map(m => m.a / (m.a + m.b));
     sizes.add(ms.length);
     uniform ||= ms.some(m => m.a === 1 && m.b === 1);

@@ -27,7 +27,7 @@ function navigate(hash) {
 }
 function renderHome() {
   return `<div class="home"><section class="hero" aria-labelledby="welcome-title">
-    <div class="hero-copy"><h1 id="welcome-title">Bayesville</h1><p class="hero-lede">Bayesian calculation practice</p></div>
+    <div class="hero-copy"><h1 id="welcome-title">Probability Playground</h1><p class="hero-lede">Bayesian calculation practice</p></div>
     <figure class="hero-art"><img src="./assets/autumn-village.png" width="1672" height="941" fetchpriority="high" alt="An autumn village in watercolor, with russet leaves, winding paths, and a stone bridge beside a lake."></figure>
     </section><div class="home-content wrap">
     <section class="chapter-section" id="skills" aria-labelledby="skills-title"><div class="section-heading"><h2 id="skills-title">Choose a calculation</h2></div>
@@ -81,7 +81,7 @@ function render(focus) {
   const scroll = window.scrollY;
   const inPractice = location.hash === '#practice' && practice;
   $('#main').innerHTML = inPractice ? renderPractice() : renderHome();
-  document.title = `${inPractice ? skillName(practice.skillId) : 'Calculation practice'} · Bayesville`;
+  document.title = `${inPractice ? skillName(practice.skillId) : 'Calculation practice'} · Probability Playground`;
   if (focus) { window.scrollTo(0, scroll); $(focus)?.focus({ preventScroll: true }); }
 }
 function showModal(content) {
@@ -144,7 +144,7 @@ document.addEventListener('click', e => {
   else if (action === 'exam') startPractice('exam');
   else if (action === 'close-modal') $('#modal').close();
   else if (action === 'pause') navigate('skills');
-  else if (action === 'about') showModal(`<h2 id="modal-title">Using Bayesville</h2><p>Choose a calculation, enter your answer, and check the worked solution. Use hints or guided steps whenever you need them.</p><p>Decimals, decimal commas, and fractions work; probabilities also accept percentages. Keep intermediate values unrounded and round your final answer to the precision shown.</p><p>Choose another question for fresh numbers. Exam practice links five calculations in one scenario.</p>`);
+  else if (action === 'about') showModal(`<h2 id="modal-title">Using Probability Playground</h2><p>Choose a calculation, enter your answer, and check the worked solution. Use hints or guided steps whenever you need them.</p><p>Decimals, decimal commas, and fractions work; probabilities also accept percentages. Keep intermediate values unrounded and round your final answer to the precision shown.</p><p>Choose another question for fresh numbers. Exam practice links five calculations in one scenario.</p>`);
   else if (!practice) return;
   else if (action === 'hint') { practice.hint = Math.min(currentQuestion().hints.length, practice.hint + 1); render('#hint-panel'); }
   else if (action === 'toggle-guided') { practice.guided = !practice.guided; render('[data-action="toggle-guided"]'); }

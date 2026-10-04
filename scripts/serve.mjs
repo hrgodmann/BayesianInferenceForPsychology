@@ -99,11 +99,11 @@ const server = createServer(async (request, response) => {
 });
 
 server.on('error', (error) => {
-  console.error(`Could not start Bayesville: ${error.message}`);
+  console.error(`Could not start Probability Playground: ${error.message}`);
   process.exitCode = 1;
 });
 
 server.listen(port, '127.0.0.1', () => {
-  console.log(`Bayesville: http://127.0.0.1:${port}${projectPrefix}/`);
+  console.log(`Probability Playground: http://127.0.0.1:${port}${projectPrefix}/`);
   console.log('Press Ctrl+C to stop.');
 });
