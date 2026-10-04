@@ -26,12 +26,14 @@ jobs:
         uses: actions/checkout@v6
       - name: Verify the question bank and practice logic
         run: npm test
+      - name: Build versioned public assets
+        run: npm run build
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload the public site
         uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: dist
       - name: Publish to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

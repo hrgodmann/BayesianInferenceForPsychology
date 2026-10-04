@@ -21,7 +21,7 @@ The streams also include central calculations from the assigned book chapters. G
 
 ## Run locally
 
-Use Node.js 20 or newer. There are no runtime packages to install and no build step.
+Use Node.js 20 or newer. There are no runtime packages to install, and local development needs no build step.
 
 ```sh
 npm run dev
@@ -41,7 +41,7 @@ For browser checks, start the preview and run `node tests/browser.mjs` with Play
 3. Run **Publish Probability Playground** under Actions, or push a change to `main`.
 4. Wait for a successful deployment at [hrgodmann.github.io/BayesianInferenceForPsychology/](https://hrgodmann.github.io/BayesianInferenceForPsychology/).
 
-The workflow runs the unit tests and publishes only `site/`. It excludes the book, original assessments (including `2025/`), syllabus, and instructor notes. These source folders are also ignored by Git. Local edits alone do not update the published site.
+The workflow runs the unit tests, then `npm run build` copies only the public `site/` files into `dist/` and adds a content-derived version to local asset URLs, including every imported JavaScript module. It publishes `dist/`. This prevents updated HTML from reusing older scripts or styles cached by a browser. The source files stay unchanged. It excludes the book, original assessments (including `2025/`), syllabus, and instructor notes. These source folders are also ignored by Git. Local edits alone do not update the published site.
 
 ## Calculations and generators
 

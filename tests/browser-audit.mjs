@@ -52,6 +52,16 @@ async function visibleFocus(selector) {
 async function noOverflow(label) {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, label);
 }
+async function questionOutline(visible) {
+  const state = await page.locator('.question-title').evaluate(element => ({
+    focused: document.activeElement === element,
+    style: getComputedStyle(element).outlineStyle,
+    color: getComputedStyle(element).outlineColor,
+  }));
+  assert.equal(state.focused, true, 'Heading remains the accessible reading and Tab starting point');
+  assert.equal(state.style, visible ? 'solid' : 'none', 'Only keyboard activation shows a heading outline');
+  if (visible) assert.equal(state.color, 'rgb(141, 61, 40)', 'Keyboard outline uses the existing palette');
+}
 function luminance(rgb) {
   const linear = rgb.map(x => x / 255).map(x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4);
   return .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2];
@@ -63,6 +73,7 @@ try {
   await tabTo('[data-action="skill"][data-id="prediction"]');
   await page.keyboard.press('Enter');
   await visibleFocus('.question-title');
+  await questionOutline(true);
   await tabTo('[data-action="toggle-guided"]');
   await page.keyboard.press('Space');
   await tabTo('#step-0');
@@ -82,12 +93,25 @@ try {
   await tabTo('[data-action="next"]');
   await page.keyboard.press('Enter');
   await visibleFocus('.question-title');
+  await questionOutline(true);
   await tabTo('[data-action="about"]');
   await page.keyboard.press('Enter');
   assert.equal(await page.locator('#modal').evaluate(d => d.open), true);
   await page.keyboard.press('Escape');
   assert.equal(await page.evaluate(() => document.activeElement.dataset.action), 'about');
   console.log('Passed: keyboard-only entry, guided validation, accessible error description, reveal, next question, and Help.');
+
+  await openCase(longCase);
+  await visibleFocus('.question-title');
+  await questionOutline(false);
+  await page.locator('#numeric-answer').fill('0.25');
+  await page.locator('[data-action="skip"]').click();
+  await visibleFocus('.question-title');
+  await questionOutline(false);
+  await page.locator('[data-action="skip"]').press('Enter');
+  await visibleFocus('.question-title');
+  await questionOutline(true);
+  console.log('Passed: pointer entry/next have no heading highlight, including after typing; keyboard activation retains a visible themed outline.');
 
   // 1280×1024 at 200% and 400% browser zoom yields these CSS viewports.
   // This checks equivalent layout/reflow, rather than pretending DPR is zoom.

@@ -11,6 +11,8 @@
 .question-context { line-height: 1.8; color: #675640; white-space: pre-line; font-size: .97rem; }
 .question-prompt { font-weight: 600; font-size: 1.04rem; line-height: 1.75; }
 .question-title { overflow-wrap: anywhere; }
+.question-title:focus { outline: none; }
+.question-title.keyboard-focus:focus { outline: 3px solid #8d3d28; outline-offset: 4px; }
 .guided-work { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 22px 0 26px; padding: 13px 0; }
 .guided-work > .text-button { color: #69543a; font-size: .84rem; }
 .guided-step { padding: 18px 0 4px; }

@@ -17,6 +17,7 @@ const icon = name => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="
 // Leaving practice or reloading discards it; nothing is read from or saved to browser storage.
 let practice = null;
 let modalOpener;
+let pendingQuestionKeyboardFocus = null;
 const newSeed = () => globalThis.crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 4294967296);
 const nextSeed = seed => (seed + 0x9e3779b9) >>> 0;
 const currentQuestion = () => practice?.questions[practice.index];
@@ -92,9 +93,18 @@ function showModal(content) {
 function resetInputs() {
   practice.input = ''; practice.hint = 0; practice.steps = []; practice.result = null;
 }
-function startPractice(skillId) {
+function focusQuestion(keyboard) {
+  const heading = $('.question-title');
+  heading.setAttribute('tabindex', '-1');
+  // Retain the reading/Tab starting point without making a mouse-opened
+  // heading look selected. Keyboard and assistive activation keep an outline.
+  heading.classList.toggle('keyboard-focus', keyboard);
+  heading.focus();
+}
+function startPractice(skillId, keyboard) {
   const seed = newSeed();
   practice = { skillId, seed, questions: skillId === 'exam' ? generateExam(seed) : [generateQuestion(skillId, seed)], index: 0, guided: false };
+  pendingQuestionKeyboardFocus = keyboard;
   resetInputs(); navigate('practice');
 }
 function showResult(correct) {
@@ -107,7 +117,7 @@ function checkAnswer() {
   if (result.error) { $('#answer-error').textContent = result.error; $('#numeric-answer').setAttribute('aria-invalid', 'true'); $('#numeric-answer').focus(); return; }
   showResult(result.correct);
 }
-function nextQuestion() {
+function nextQuestion(keyboard) {
   if (practice.skillId === 'exam' && practice.index < practice.questions.length - 1) practice.index++;
   else {
     practice.seed = nextSeed(practice.seed);
@@ -115,7 +125,7 @@ function nextQuestion() {
     practice.index = 0;
   }
   resetInputs(); render(); window.scrollTo(0, 0);
-  $('.question-title').setAttribute('tabindex', '-1'); $('.question-title').focus();
+  focusQuestion(keyboard);
 }
 
 $('.skip-link').addEventListener('click', e => {
@@ -140,8 +150,8 @@ document.addEventListener('click', e => {
   const button = e.target.closest('[data-action]');
   if (!button || button.disabled) return;
   const { action, id, index } = button.dataset;
-  if (action === 'skill') startPractice(id);
-  else if (action === 'exam') startPractice('exam');
+  if (action === 'skill') startPractice(id, e.detail === 0);
+  else if (action === 'exam') startPractice('exam', e.detail === 0);
   else if (action === 'close-modal') $('#modal').close();
   else if (action === 'pause') navigate('skills');
   else if (action === 'about') showModal(`<h2 id="modal-title">Using Probability Playground</h2><p>Choose a calculation, enter your answer, and check the worked solution. Use hints or guided steps whenever you need them.</p><p>Decimals, decimal commas, and fractions work; probabilities also accept percentages. Keep intermediate values unrounded and round your final answer to the precision shown.</p><p>Choose another question for fresh numbers. Exam practice links five calculations in one scenario.</p>`);
@@ -154,7 +164,7 @@ document.addEventListener('click', e => {
     render(`#step-${i}`);
   }
   else if (action === 'reveal') showResult(null);
-  else if (action === 'next' || action === 'skip') nextQuestion();
+  else if (action === 'next' || action === 'skip') nextQuestion(e.detail === 0);
 });
 function routeChanged() {
   if (['#chapters', '#progress'].includes(location.hash)) history.replaceState(null, '', '#skills');
@@ -162,8 +172,9 @@ function routeChanged() {
   if (location.hash === '#practice' && !practice) history.replaceState(null, '', '#skills');
   render(); window.scrollTo(0, 0);
   if (location.hash === '#practice') {
-    $('.question-title').setAttribute('tabindex', '-1'); $('.question-title').focus();
+    focusQuestion(pendingQuestionKeyboardFocus ?? true);
   } else $('#main').focus({ preventScroll: true });
+  pendingQuestionKeyboardFocus = null;
   if (location.hash === '#skills') $('#skills')?.scrollIntoView({ block: 'start' });
 }
 window.addEventListener('hashchange', routeChanged);
