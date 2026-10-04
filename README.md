@@ -17,6 +17,8 @@ There is one practice stream per skill, with no difficulty or session-length cho
 
 Every calculation family has five story settings, including its original setting. “Another question” changes the setting as well as the numbers. Each linked exam keeps one story, source table, and observed history across all five parts; a new exam changes the setting. The source requested in the model-probability questions also varies. All stories state the assumptions needed for their calculations, including shared rates and conditional independence where relevant.
 
+Questions and solutions open at the start of their cards. “Back to calculations” restores the selected card and list position; the logo opens the top of the home page, and Practice opens the calculation list. Browser Back/Forward restores each page's position, while inline guidance and Help keep the current reading position.
+
 The streams also include central calculations from the assigned book chapters. General-law exercises distinguish the probability of a law from the probability of the next success, including unequal model priors and failures that rule out the stated error-free law. Sequential evidence exercises update parameter distributions between batches. Beta-forecaster exercises offer guided checks of every posterior model weight and within-model prediction before averaging. These additions use the existing seven cards and do not change the five-part exam scenario.
 
 ## Run locally
@@ -33,6 +35,8 @@ Open [the local preview](http://127.0.0.1:4173/BayesianInferenceForPsychology/).
 For browser checks, start the preview and run `node tests/browser.mjs` with Playwright available. `BAYESVILLE_PLAYWRIGHT_MODULE` and `BAYESVILLE_CHROMIUM` can point to an existing installation. The browser checks cover direct-to-question practice, grading, guided steps, linked exams, no browser-storage access, and desktop/mobile layouts. Screenshots are written to the ignored `.artifacts/` directory.
 
 `node tests/browser-audit.mjs` adds keyboard-only flows, accessible error descriptions, zoom-equivalent reflow, input contrast, and a sweep of all generated presentation types. It uses the same Playwright configuration. `node tests/browser-firefox-audit.mjs` runs a second-engine check in a temporary Firefox profile; it requires an installed Firefox with WebDriver BiDi and a Node runtime with global `WebSocket` support. Set `BAYESVILLE_FIREFOX` to override the Firefox binary path. These optional audits do not install browsers or use your normal browser profile.
+
+`node tests/browser-navigation.mjs` checks scroll destinations, return to the selected calculation, browser Back/Forward restoration, inline guidance, Help, and keyboard focus on desktop and mobile with normal and reduced motion. It uses the same Playwright configuration.
 
 ## Publish on GitHub Pages
 
@@ -57,6 +61,6 @@ Answers accept decimals, decimal commas, fractions, and percentages for probabil
 
 ## No saved progress
 
-The app does not read or write local storage, session storage, cookies, or a backend. It holds only the current question (or linked exam scenario) in memory. Leaving practice or reloading discards the current inputs and scenario. There are no accounts, saved sessions, attempts, scores, bookmarks, or review lists. Storage from earlier versions is not read or reused.
+The app does not read or write local storage, session storage, cookies, or a backend. It holds only the current question (or linked exam scenario) in memory. Leaving practice or reloading discards the current inputs and scenario. There are no accounts, saved sessions, attempts, scores, bookmarks, or review lists. Storage from earlier versions is not read or reused. Temporary scroll positions let Back/Forward and “Back to calculations” return to the previous place; these positions disappear on reload and contain no questions or answers.
 
 The visual theme uses the supplied autumn village artwork, minimally edited to add an empty wooden playground in the foreground, in `site/assets/autumn-village.png`. `site/styles.css` and `site/autumn.css` provide the existing paper surfaces and typography; `site/calculations.css` adds the calculation workbook layout. Fonts come from the device, without external font requests.
