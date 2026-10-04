@@ -29,7 +29,7 @@ function navigate(hash) {
 function renderHome() {
   return `<div class="home"><section class="hero" aria-labelledby="welcome-title">
     <div class="hero-copy"><h1 id="welcome-title">Probability Playground</h1><p class="hero-lede">Bayesian calculation practice</p></div>
-    <figure class="hero-art"><img src="./assets/autumn-village.png" width="1672" height="941" fetchpriority="high" alt="An autumn village in watercolor, with russet leaves, winding paths, and a stone bridge beside a lake."></figure>
+    <figure class="hero-art"><img src="./assets/autumn-village.png" width="1672" height="941" fetchpriority="high" alt="An autumn village in watercolor, with a small wooden swing set and slide beside the foreground path, russet leaves, and a stone bridge by a lake."></figure>
     </section><div class="home-content wrap">
     <section class="chapter-section" id="skills" aria-labelledby="skills-title"><div class="section-heading"><h2 id="skills-title">Choose a calculation</h2></div>
     <div class="chapter-grid skill-grid">${skills.map((s, i) => `<button class="chapter-card skill-card" data-action="skill" data-id="${s.id}"><span class="card-top"><span class="skill-symbol" aria-hidden="true">${['Σ','P(H | D)','P(D)','α, β','∑ wᵢpᵢ','P(next)','BF'][i]}</span><span class="card-chevron">${icon('arrow')}</span></span><h3>${esc(s.title)}</h3><span class="card-bottom">${esc(s.description)}</span></button>`).join('')}

@@ -59,4 +59,4 @@ Answers accept decimals, decimal commas, fractions, and percentages for probabil
 
 The app does not read or write local storage, session storage, cookies, or a backend. It holds only the current question (or linked exam scenario) in memory. Leaving practice or reloading discards the current inputs and scenario. There are no accounts, saved sessions, attempts, scores, bookmarks, or review lists. Storage from earlier versions is not read or reused.
 
-The visual theme retains the supplied artwork in `site/assets/autumn-village.png`. `site/styles.css` and `site/autumn.css` provide the existing paper surfaces and typography; `site/calculations.css` adds the calculation workbook layout. Fonts come from the device, without external font requests.
+The visual theme uses the supplied autumn village artwork, minimally edited to add an empty wooden playground in the foreground, in `site/assets/autumn-village.png`. `site/styles.css` and `site/autumn.css` provide the existing paper surfaces and typography; `site/calculations.css` adds the calculation workbook layout. Fonts come from the device, without external font requests.
