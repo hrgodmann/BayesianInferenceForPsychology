@@ -1,5 +1,6 @@
 import { skills, generateQuestion, generateExam } from './questions.js';
-import { gradeAnswer, formatAnswer } from './engine.js';
+import { gradeAnswer } from './engine.js';
+import { renderFormula, renderWorking, renderProse, displayAnswer, isIntegerDisplay } from './math-display.js';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -80,43 +81,49 @@ function renderHome() {
 }
 function tableMarkup(table) {
   if (!table) return '';
-  return `<div class="table-wrap" tabindex="0" role="region" aria-label="Question data"><table><thead><tr>${table.headers.map(h => `<th scope="col">${esc(h)}</th>`).join('')}</tr></thead><tbody>${table.rows.map(row => `<tr>${row.map((cell,i) => i ? `<td>${esc(cell)}</td>` : `<th scope="row">${esc(cell)}</th>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  return `<div class="table-wrap" tabindex="0" role="region" aria-label="Question data"><table><thead><tr>${table.headers.map(h => `<th scope="col" data-source="${esc(h)}">${renderProse(h)}</th>`).join('')}</tr></thead><tbody>${table.rows.map(row => `<tr>${row.map((cell,i) => i ? `<td data-source="${esc(cell)}">${renderProse(cell)}</td>` : `<th scope="row" data-source="${esc(cell)}">${renderProse(cell)}</th>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function answerHelp(q) {
+  if (isIntegerDisplay(q)) return 'Whole number';
   return `${q.unit === 'probability' ? 'Probability from 0 to 1' : q.unit === 'ratio' ? 'Ratio' : 'Number'} · ${q.decimals ?? 2} decimal places`;
 }
 function guidedMarkup(q, revealed) {
   if (!q.steps.length) return '';
   if (revealed) {
     const entered = q.steps.map((step, i) => ({ step, saved: practice.steps[i] })).filter(item => item.saved?.input);
-    return entered.length ? `<details class="intermediate-answers"><summary>Your intermediate answers</summary><ol>${entered.map(({ step, saved }) => `<li>${esc(step.prompt)}<br><strong>${esc(saved.input)}</strong>${saved.checked && !saved.error ? saved.correct ? ' · Correct' : ' · Not quite' : ''}</li>`).join('')}</ol></details>` : '';
+    return entered.length ? `<details class="intermediate-answers"><summary>Your intermediate answers</summary><ol>${entered.map(({ step, saved }) => `<li>${renderProse(step.prompt)}<br><strong>${esc(saved.input)}</strong>${saved.checked && !saved.error ? saved.correct ? ' · Correct' : ' · Not quite' : ''}</li>`).join('')}</ol></details>` : '';
   }
   return `<section class="guided-work"><button class="text-button" data-action="toggle-guided" aria-expanded="${practice.guided}" aria-controls="guided-fields">${icon('calculator')} ${practice.guided ? 'Hide' : 'Show'} guided steps</button>
   ${practice.guided ? `<div id="guided-fields"><p class="input-help">Check each step separately. Use unrounded values in later calculations.</p>${q.steps.map((step, i) => {
     const saved = practice.steps[i] || {};
-    return `<div class="guided-step"><label for="step-${i}"><span class="step-number">${i + 1}</span>${esc(step.prompt)}</label><div class="step-entry"><input id="step-${i}" data-step="${i}" type="text" inputmode="decimal" autocomplete="off" maxlength="100" value="${esc(saved.input || '')}" aria-describedby="step-help-${i} step-feedback-${i}" ${saved.error ? 'aria-invalid="true"' : ''} ${revealed ? 'disabled' : ''}><button class="button secondary small" data-action="check-step" data-index="${i}" ${revealed ? 'disabled' : ''}>Check step ${i + 1}</button></div><p class="input-help" id="step-help-${i}">${answerHelp(step)}</p><p class="step-feedback ${saved.correct ? 'good' : ''}" id="step-feedback-${i}" role="status">${saved.error ? esc(saved.error) : saved.checked ? saved.correct ? 'Correct.' : 'Not quite. Try again or use a hint.' : ''}</p></div>`;
+    return `<div class="guided-step"><label for="step-${i}"><span class="step-number">${i + 1}</span><span>${renderProse(step.prompt)}</span></label><div class="step-entry"><input id="step-${i}" data-step="${i}" type="text" inputmode="decimal" autocomplete="off" maxlength="100" value="${esc(saved.input || '')}" aria-describedby="step-help-${i} step-feedback-${i}" ${saved.error ? 'aria-invalid="true"' : ''} ${revealed ? 'disabled' : ''}><button class="button secondary small" data-action="check-step" data-index="${i}" ${revealed ? 'disabled' : ''}>Check step ${i + 1}</button></div><p class="input-help" id="step-help-${i}">${answerHelp(step)}</p><p class="step-feedback ${saved.correct ? 'good' : ''}" id="step-feedback-${i}" role="status">${saved.error ? esc(saved.error) : saved.checked ? saved.correct ? 'Correct.' : 'Not quite. Try again or use a hint.' : ''}</p></div>`;
   }).join('')}</div>` : ''}</section>`;
 }
 function renderPractice() {
   const q = currentQuestion(), result = practice.result, revealed = Boolean(result);
   return `<div class="practice-wrap"><div class="practice-top"><button class="text-button" data-action="pause">${icon('book')} Back to calculations</button></div>
     <div class="session-heading"><h1>${esc(skillName(practice.skillId))}</h1>${practice.skillId === 'exam' ? `<span class="question-count">Part ${practice.index + 1} of ${practice.questions.length}</span>` : ''}</div>
-    <article class="question-card"><h2 class="question-title">${esc(q.title)}</h2><p class="question-context">${esc(q.context)}</p>${tableMarkup(q.table)}<p class="question-prompt">${esc(q.prompt)}</p>
+    <article class="question-card"><h2 class="question-title">${esc(q.title)}</h2><p class="question-context" data-source="${esc(q.context)}">${renderProse(q.context)}</p>${tableMarkup(q.table)}<p class="question-prompt" data-source="${esc(q.prompt)}">${renderProse(q.prompt)}</p>
     ${guidedMarkup(q, revealed)}
-    <form id="answer-form" novalidate><label for="numeric-answer" class="input-label">Your answer <span>${answerHelp(q)}</span></label><div class="numeric-row"><input id="numeric-answer" type="text" inputmode="decimal" autocomplete="off" maxlength="100" value="${esc(practice.input)}" placeholder="Enter your answer" ${revealed ? 'disabled' : ''} aria-describedby="answer-help answer-error"><span class="numeric-unit">${q.unit === 'probability' ? 'P' : q.unit === 'ratio' ? 'ratio' : ''}</span></div><p class="input-help" id="answer-help">${q.unit === 'probability' ? 'Decimals, fractions, and percentages work.' : 'Decimals and fractions work.'} Round only your final answer; round an exact halfway value up.</p><p class="answer-error" id="answer-error" role="alert"></p>
+    <form id="answer-form" novalidate><label for="numeric-answer" class="input-label">Your answer <span>${answerHelp(q)}</span></label><div class="numeric-row"><input id="numeric-answer" type="text" inputmode="decimal" autocomplete="off" maxlength="100" value="${esc(practice.input)}" placeholder="Enter your answer" ${revealed ? 'disabled' : ''} aria-describedby="answer-help answer-error"><span class="numeric-unit">${q.unit === 'probability' ? 'P' : q.unit === 'ratio' ? 'ratio' : ''}</span></div><p class="input-help" id="answer-help">${isIntegerDisplay(q) ? 'Equivalent decimals and fractions also work.' : `${q.unit === 'probability' ? 'Decimals, fractions, and percentages work.' : 'Decimals and fractions work.'} Round only your final answer; round an exact halfway value up.`}</p><p class="answer-error" id="answer-error" role="alert"></p>
     ${!revealed ? `<div class="question-actions"><button class="button primary" type="submit" data-action="check">Check answer ${icon('check')}</button><button class="button ghost" type="button" data-action="hint" ${practice.hint >= q.hints.length ? 'disabled' : ''}>${icon('hint')} ${practice.hint ? 'Next hint' : 'Show hint'}</button></div>` : ''}</form>
-    ${practice.hint && !revealed ? `<div class="hint-panel" id="hint-panel">${q.hints.slice(0, practice.hint).map((h,i) => `<div id="hint-${i}" tabindex="-1"><strong>${icon('hint')} Hint ${i + 1}</strong><p>${esc(h)}</p></div>`).join('')}</div>` : ''}
+    ${practice.hint && !revealed ? `<div class="hint-panel" id="hint-panel">${q.hints.slice(0, practice.hint).map((h,i) => `<div id="hint-${i}" tabindex="-1"><strong>${icon('hint')} Hint ${i + 1}</strong><p data-source="${esc(h)}">${renderProse(h)}</p></div>`).join('')}</div>` : ''}
     ${!revealed ? `<div class="reveal-row"><button class="text-button" data-action="reveal">Show solution</button><button class="text-button" data-action="skip">${practice.skillId === 'exam' ? 'Skip part' : 'Another question'}</button></div>` : ''}
     </article>${revealed ? renderResult(q, result) : ''}
     </div>`;
 }
 function solutionMarkup(q) {
-  return `${q.steps.length ? `<div class="worked-solution"><strong>Working</strong><ol>${q.steps.map(step => `<li><span>${esc(step.prompt)}</span><span class="formula">${esc(step.formula)}</span><span class="calculation">${esc(step.working)}${step.working ? '' : ` = ${formatAnswer(step)}`}</span></li>`).join('')}</ol></div>` : ''}<p class="explanation">${esc(q.explanation)}</p>`;
+  const rounding = isIntegerDisplay(q) ? 'Final answer' : `To ${q.decimals ?? 2} decimal places`;
+  const calculation = (step, className) => `<li class="${className}"><span class="solution-step-title">${renderProse(step.prompt)}</span><div class="formula">${renderFormula(step.formula)}</div><div class="calculation">${renderWorking(step.working, step)}</div></li>`;
+  return `<div class="worked-solution"><h3>Working</h3><ol>${q.steps.map(step => calculation(step, 'intermediate-calculation')).join('')}${(q.solution.preparation || []).map(step => calculation(step, 'preparation-calculation')).join('')}
+    <li class="final-calculation"><span class="solution-step-title">${q.steps.length ? 'Final calculation' : 'Calculate the answer'}</span><div class="formula">${renderFormula(q.solution.formula)}</div><div class="calculation">${renderWorking(q.solution.working, q)}</div><p class="rounding-note">${rounding}: <strong>${displayAnswer(q)}</strong></p></li>
+    </ol></div><p class="explanation" data-source="${esc(q.solution.interpretation)}">${renderProse(q.solution.interpretation)}</p>`;
 }
 function renderResult(q, result) {
   const status = result.correct === null ? 'revealed' : result.correct ? 'correct' : 'incorrect';
   const title = result.correct === null ? 'Solution' : result.correct ? 'Correct' : 'Not quite';
-  return `<section class="result-card ${status}" aria-labelledby="result-title"><div class="result-heading"><span class="result-icon">${icon(result.correct ? 'check' : result.correct === null ? 'book' : 'close')}</span><h2 id="result-title" tabindex="-1">${title}</h2><div class="correct-answer"><span>Answer</span><strong>${formatAnswer(q)}</strong></div></div>
+  return `<section class="result-card ${status}" aria-labelledby="result-title"><div class="result-heading"><span class="result-icon">${icon(result.correct ? 'check' : result.correct === null ? 'book' : 'close')}</span><h2 id="result-title" tabindex="-1">${title}</h2></div>
+    <div class="answer-comparison">${practice.input.trim() ? `<div class="submitted-answer"><span>${result.correct === null ? 'Your entry (unchecked)' : 'Your answer'}</span><strong>${esc(practice.input)}</strong></div>` : ''}<div class="correct-answer"><span>Correct answer</span><strong>${displayAnswer(q)}</strong></div></div>
     ${solutionMarkup(q)}<p class="source-note">Reading: ${esc(q.source.label)}</p>
     <div class="next-row"><button class="button primary" data-action="next">${practice.skillId === 'exam' ? practice.index === practice.questions.length - 1 ? 'New scenario' : 'Next part' : 'Another question'} ${icon('arrow')}</button></div></section>`;
 }
@@ -125,11 +132,26 @@ function render(focus, anchor = focus) {
   const offset = anchor ? $(anchor)?.getBoundingClientRect().top : undefined;
   const inPractice = location.hash === '#practice' && practice;
   $('#main').innerHTML = inPractice ? renderPractice() : renderHome();
+  labelScrollableMath();
   document.title = `${inPractice ? skillName(practice.skillId) : 'Calculation practice'} · Probability Playground`;
   if (focus) {
     focusElement($(focus));
     const element = anchor ? $(anchor) : null;
     scrollToPosition(element && offset !== undefined ? window.scrollY + element.getBoundingClientRect().top - offset : scroll);
+  }
+}
+function labelScrollableMath() {
+  for (const element of document.querySelectorAll('.math-block')) {
+    const scrollable = element.scrollWidth > element.clientWidth + 1;
+    if (scrollable) {
+      element.setAttribute('tabindex', '0');
+      element.setAttribute('role', 'region');
+      element.setAttribute('aria-label', 'Equation; scroll horizontally to read all of it');
+    } else {
+      element.removeAttribute('tabindex');
+      element.removeAttribute('role');
+      element.removeAttribute('aria-label');
+    }
   }
 }
 function showModal(content) {
@@ -274,4 +296,11 @@ window.addEventListener('scroll', () => {
 }, { passive: true });
 window.addEventListener('popstate', historyChanged);
 window.addEventListener('hashchange', historyChanged);
+window.addEventListener('resize', labelScrollableMath);
+// Load the locally hosted math fonts before the first reading position is set.
+// Later question/answer renders then have their final size immediately.
+if (document.fonts) await Promise.all([
+  '1em KaTeX_Main', 'italic 1em KaTeX_Math', '1em KaTeX_Size1',
+  '1em KaTeX_Size2', '1em KaTeX_Size3', '1em KaTeX_Size4', '1em KaTeX_AMS',
+].map(font => document.fonts.load(font))).catch(() => {});
 routeChanged();

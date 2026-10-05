@@ -59,3 +59,43 @@
 .intermediate-answers { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 22px 0 26px; padding: 13px 0; font-size: .82rem; line-height: 1.7; color: #66543a; }
 .intermediate-answers summary { cursor: pointer; padding: 5px 0; }
 .intermediate-answers li + li { margin-top: 10px; }
+
+/* Typeset mathematics stays on the same paper surfaces as the question. */
+.question-card, .result-card, .worked-solution, .guided-step { min-width: 0; }
+.math-block { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: 7px 2px 10px; overscroll-behavior-x: contain; }
+.math-block:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.math-block .katex { font-size: 1.08em; }
+.math-inline .katex { font-size: 1.05em; }
+.math-inline { white-space: normal; }
+.math-line { padding: 3px 0; }
+.formula { color: var(--ink); font-family: inherit; margin-top: 7px; }
+.calculation { color: #675640; font-size: .95rem; }
+.worked-solution { padding: 23px 25px; }
+.worked-solution h3 { font: 600 .88rem var(--sans, Arial, sans-serif); letter-spacing: 0; margin: 0 0 20px; color: #665139; }
+.worked-solution ol { line-height: 1.65; }
+.worked-solution li + li { margin-top: 24px; }
+.solution-step-title { display: block; font-size: .88rem; }
+.final-calculation { border-top: 1px solid var(--line); padding-top: 23px; }
+.final-calculation:first-child { border-top: 0; padding-top: 0; }
+.final-calculation .solution-step-title { font-weight: 600; color: var(--ink); }
+.rounding-note { font-size: .83rem; margin: 12px 0 0; color: var(--muted); }
+.rounding-note strong { color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.answer-comparison { display: flex; flex-wrap: wrap; gap: 18px 34px; padding: 0 0 24px; margin: 0 0 24px; border-bottom: 1px solid var(--line); }
+.answer-comparison > div { min-width: 0; flex: 1 1 120px; }
+.answer-comparison .correct-answer { display: block; min-width: max-content; margin: 0; padding: 0; text-align: left; }
+.answer-comparison > div > span { display: block; font-size: .76rem; line-height: 1.5; color: var(--muted); margin-bottom: 5px; }
+.answer-comparison > div > strong { display: block; font-family: var(--serif); font-size: 1.9rem; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+.submitted-answer strong { color: #66543e; }
+.answer-comparison .correct-answer strong { color: #6f4a2d; }
+.correct .answer-comparison .correct-answer strong { color: #555c34; }
+@media (max-width: 560px) {
+  .worked-solution { padding: 20px 17px; }
+  .worked-solution ol { padding-left: 18px; }
+  .worked-solution li { padding-left: 0; }
+  .solution-step-title { font-size: .84rem; }
+  .calculation { font-size: .88rem; }
+  .formula { font-size: .94rem; }
+  .answer-comparison { gap: 16px; }
+  .answer-comparison > div { flex-basis: 95px; }
+  .answer-comparison > div > strong { font-size: 1.65rem; }
+}

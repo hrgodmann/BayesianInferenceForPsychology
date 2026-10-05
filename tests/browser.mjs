@@ -77,17 +77,17 @@ async function openCase({ skillId, seed, question }) {
   await page.locator(`[data-action="skill"][data-id="${skillId}"]`).click();
   await page.locator('.question-card').waitFor();
   assert.equal(await page.locator('.question-title').innerText(), question.title);
-  assert.equal(await page.locator('.question-context').innerText(), question.context);
-  assert.equal(await page.locator('.question-prompt').innerText(), question.prompt);
-  const rows = await page.locator('.question-card tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent.trim())));
+  assert.equal(await page.locator('.question-context').getAttribute('data-source'), question.context);
+  assert.equal(await page.locator('.question-prompt').getAttribute('data-source'), question.prompt);
+  const rows = await page.locator('.question-card tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.getAttribute('data-source'))));
   assert.deepEqual(rows, question.table?.rows.map(row => row.map(String)) || [], 'The visible table contains every generated model and prior');
   assert.equal(await page.locator('#setup-form, #practice-difficulty, #practice-length').count(), 0);
 }
 async function current(skillId, part = 0) {
-  const context = await page.locator('.question-context').innerText();
-  const prompt = await page.locator('.question-prompt').innerText();
+  const context = await page.locator('.question-context').getAttribute('data-source');
+  const prompt = await page.locator('.question-prompt').getAttribute('data-source');
   const title = await page.locator('.question-title').innerText();
-  const cells = await page.locator('.question-card tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent.trim())));
+  const cells = await page.locator('.question-card tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.getAttribute('data-source'))));
   // Match the visible question to the controlled seed stream. This reads no app
   // internals; the expected numerical answer comes from the public generator API.
   let seed = initialSeed;
@@ -95,7 +95,7 @@ async function current(skillId, part = 0) {
     const question = skillId === 'exam' ? generateExam(seed)[part] : generateQuestion(skillId, seed);
     if (question.context === context && question.prompt === prompt && question.title === title) {
       if (JSON.stringify(cells) !== JSON.stringify(question.table?.rows.map(row => row.map(String)) || [])) { seed = (seed + seedStep) >>> 0; continue; }
-      return { question, seed, formatted: formatAnswer(question), steps: question.steps.map(formatAnswer) };
+      return { question, seed, formatted: question.numberFormat === 'integer' ? String(question.answer) : formatAnswer(question), steps: question.steps.map(formatAnswer) };
     }
     seed = (seed + seedStep) >>> 0;
   }
@@ -111,7 +111,7 @@ async function correct(skillId, part = 0, value) {
   await page.locator('.result-card.correct').waitFor();
   assert.equal(await page.locator('.correct-answer strong').innerText(), data.formatted);
   assert.ok((await page.locator('.explanation').innerText()).length > 20);
-  assert.equal(await page.locator('.worked-solution li').count(), data.question.steps.length);
+  assert.equal(await page.locator('.worked-solution li').count(), data.question.steps.length + (data.question.solution.preparation?.length || 0) + 1);
   return data;
 }
 async function overflow(label) {
@@ -143,8 +143,8 @@ async function checkCase(item) {
   await page.locator('#numeric-answer').fill(q.answer === 0 ? '0' : formatAnswer(q));
   await page.locator('#numeric-answer').press('Enter');
   await page.locator('.result-card.correct').waitFor();
-  assert.equal(await page.locator('.correct-answer strong').innerText(), formatAnswer(q));
-  assert.equal(await page.locator('.worked-solution li').count(), q.steps.length);
+  assert.equal(await page.locator('.correct-answer strong').innerText(), q.numberFormat === 'integer' ? String(q.answer) : formatAnswer(q));
+  assert.equal(await page.locator('.worked-solution li').count(), q.steps.length + (q.solution.preparation?.length || 0) + 1);
   assert.match(await page.locator('.source-note').innerText(), /Course book/);
   await simplifiedControls();
   await noStorage();
@@ -354,7 +354,7 @@ try {
       await page.screenshot({ path: `.artifacts/additions-guided-${i}-${width}.png`, fullPage: true });
       await click('reveal');
       await page.locator('.result-card.revealed').waitFor();
-      assert.equal(await page.locator('.worked-solution li').count(), item.question.steps.length);
+      assert.equal(await page.locator('.worked-solution li').count(), item.question.steps.length + (item.question.solution.preparation?.length || 0) + 1);
       await overflow(`${item.question.title}, solution, ${width}px`);
       await page.screenshot({ path: `.artifacts/additions-solution-${i}-${width}.png`, fullPage: true });
       await simplifiedControls();

@@ -25,6 +25,9 @@ function random(seed) {
 const pick = (rng, items) => items[Math.floor(rng() * items.length)];
 const integer = (rng, lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
 const f = value => Number(value.toPrecision(7)).toString();
+// Presentation metadata (solution and numberFormat) never changes a generated
+// answer, its grading precision, or the random stream. Keep the legacy fields
+// available for independent regression comparisons and instructor audits.
 const precision = value => {
   let places = value > 0 && (value < 0.01 || value > 0.99 && value < 1) ? 4 : 2;
   // Preserve the distinction between a small probability and impossibility,
@@ -36,8 +39,9 @@ const precision = value => {
   }
   return places;
 };
-const step = (prompt, answer, formula, working, unit = 'probability') => ({
+const step = (prompt, answer, formula, working, unit = 'probability', numberFormat) => ({
   prompt, answer, unit, decimals: precision(answer), formula, working,
+  ...(numberFormat ? { numberFormat } : {}),
 });
 const book = chapters => ({ label: `Course book · ${chapters.includes(',') ? 'Chapters' : 'Chapter'} ${chapters}`, chapters });
 const weights = rng => {
@@ -93,7 +97,7 @@ function polishQuestion(question) {
     if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, polish(item)]));
     return value;
   };
-  return { ...question, ...Object.fromEntries(['title', 'context', 'prompt', 'table', 'hints', 'steps', 'explanation']
+  return { ...question, ...Object.fromEntries(['title', 'context', 'prompt', 'table', 'hints', 'steps', 'explanation', 'solution']
     .filter(key => key in question).map(key => [key, polish(question[key])])) };
 }
 
@@ -115,8 +119,13 @@ function probability(rng) {
         prompt: `Given that the visitor attended ${given}, what is the probability that they also attended ${target}?`,
         answer: both / denominator,
         hints: [`Restrict the sample space to visitors who attended ${given}.`, `P(${target} | ${given}) = P(${target} and ${given}) / P(${given}). Count the visitors in both activities and divide by the total in the conditioning group.`],
-        steps: [step(`Number of visitors who attended ${given}`, denominator, 'Conditioning group = both activities + only the given activity', `${both} + ${givenMusic ? musicOnly : artOnly} = ${denominator}`, 'number')],
+        steps: [step(`Number of visitors who attended ${given}`, denominator, 'Conditioning group = both activities + only the given activity', `${both} + ${givenMusic ? musicOnly : artOnly} = ${denominator}`, 'number', 'integer')],
         explanation: `There are ${denominator} visitors in the ${given} group, and ${both} of them also attended ${target}. P(${target} | ${given}) = (${both}/100) / (${denominator}/100) = ${both}/${denominator} = ${f(both / denominator)}. The denominator counts the given group, not all 100 visitors.`,
+        solution: {
+          formula: `P(${target} | ${given}) = P(${target} and ${given}) / P(${given})`,
+          working: `(${both}/100) / (${denominator}/100) = ${both}/${denominator} = ${f(both / denominator)}`,
+          interpretation: `Among the ${denominator} visitors who attended ${given}, ${both} also attended ${target}. The denominator counts the given group, not all 100 visitors.`,
+        },
         source: book('3'),
       };
     }
@@ -131,6 +140,11 @@ function probability(rng) {
       hints: ['Adding P(A) and P(B) counts visitors in both activities twice.', 'Use P(A ∪ B) = P(A) + P(B) − P(A ∩ B).'],
       steps: [step('Sum before removing the double-counted overlap', a + b, 'P(A) + P(B)', `${f(a)} + ${f(b)} = ${f(a + b)}`, 'number')],
       explanation: `P(A ∪ B) = ${f(a)} + ${f(b)} − ${f(intersection)} = ${f(answer)}. Subtract the overlap once so visitors who attended both are counted once. “Or” includes both; independence is not assumed.`,
+      solution: {
+        formula: 'P(A ∪ B) = P(A) + P(B) − P(A ∩ B)',
+        working: `${f(a)} + ${f(b)} − ${f(intersection)} = ${f(answer)}`,
+        interpretation: 'Subtract the overlap once so visitors who attended both art and music are counted once. “Or” includes both; independence is not assumed.',
+      },
       source: book('3'),
     };
   }
@@ -154,6 +168,15 @@ function probability(rng) {
     explanation: backwards
       ? `P(success | Morning) = (${f(total)} − ${f(known)}) / ${f(ws[0])} = ${f(ps[0])}. The other sessions account for ${f(known)} of the overall success probability.`
       : `P(success) = ${ws.map((w, i) => `${f(w)} × ${f(ps[i])}`).join(' + ')} = ${f(total)}. Each visitor belongs to exactly one session, so these joint probabilities can be added.`,
+    solution: backwards ? {
+      formula: 'P(success | Morning) = [P(success) − known contribution] / P(Morning)',
+      working: `(${f(total)} − ${f(known)}) / ${f(ws[0])} = ${f(ps[0])}`,
+      interpretation: `The other sessions contribute ${f(known)} to the overall success probability. The remaining contribution belongs to Morning; divide by its probability to recover its conditional success rate.`,
+    } : {
+      formula: 'P(success) = Σ P(session)P(success | session)',
+      working: `${ws.map((w, i) => `${f(w)} × ${f(ps[i])}`).join(' + ')} = ${f(total)}`,
+      interpretation: 'Each visitor belongs to exactly one session, so these weighted success probabilities can be added.',
+    },
     source: book('3'),
   };
 }
@@ -190,6 +213,13 @@ function generalLaw(rng, posterior) {
       step('Posterior odds H_L:H_B', posteriorOdds, 'Posterior odds = [P(H_L) / P(H_B)] × BF_LB', `[${f(weight)} / ${f(1 - weight)}] × ${f(bf)} = ${f(posteriorOdds)}`, 'ratio'),
     ] : likelihoodSteps,
     explanation: `${evidenceWorking} ${posterior ? `Prior odds H_L:H_B = ${f(weight)} / ${f(1 - weight)} = ${f(priorOdds)}. Posterior odds = ${f(priorOdds)} × ${f(bf)} = ${f(posteriorOdds)}. P(H_L | D) = ${f(posteriorOdds)} / (1 + ${f(posteriorOdds)}) = ${f(answer)}. This is the probability that θ is exactly 1, not the probability that the next trial succeeds.` : `This compares how well the two models predict the observed sequence; it is neither a posterior model probability nor a next-success probability.`}${fails ? ' A failure rules out this error-free general law, while remaining possible under the beta alternative.' : a === 1 && b === 1 ? ` With a uniform beta alternative and ${s} successes, BF_LB = ${s} + 1 = ${s + 1}.` : ''}`,
+    solution: {
+      formula: posterior ? 'P(H_L | D) = posterior odds / (1 + posterior odds)' : 'BF_LB = P(D | H_L) / P(D | H_B)',
+      working: posterior
+        ? `${f(posteriorOdds)} / (1 + ${f(posteriorOdds)}) = ${f(answer)}`
+        : `${lawLikelihood} / [${betaProduct(a, b, s, fails)}] = ${f(bf)}`,
+      interpretation: `${posterior ? 'This is the posterior probability that θ is exactly 1, not the probability that the next trial succeeds. The prior odds are updated by the Bayes factor.' : 'This compares how well the two models predict the observed sequence; it is neither a posterior model probability nor a next-success probability. Model prior probabilities do not enter this ratio.'}${fails ? ' A failure rules out this error-free general law, while remaining possible under the beta alternative.' : a === 1 && b === 1 ? ` With a uniform beta alternative and ${s} successes, the Bayes factor is ${s + 1}.` : ''}`,
+    },
     source: book('14, 15, 22'),
   };
 }
@@ -222,6 +252,13 @@ function sequentialEvidence(rng, total) {
       'BF_AB(D1) = P(D1 | A) / P(D1 | B)',
       `[${betaProduct(a, b, s1, f1)}] / [${betaProduct(other.a, other.b, s1, f1)}] = ${f(first[0])} / ${f(first[1])} = ${f(firstBF)}`, 'ratio'), ...secondSteps] : secondSteps,
     explanation: `D1 contains ${s1} ${s1 === 1 ? 'success' : 'successes'} and ${f1} ${f1 === 1 ? 'failure' : 'failures'}. The updated parameter distributions are ${updated.map((m, i) => `${m.name}: Beta(${models[i].a} + ${s1}, ${models[i].b} + ${f1}) = Beta(${m.a}, ${m.b})`).join('; ')}. ${updated.map((m, i) => `P(D2 | D1, ${m.name}) = ${betaProduct(m.a, m.b, s2, f2)} = ${f(second[i])}.`).join(' ')} BF_AB(D2 | D1) = ${f(second[0])} / ${f(second[1])} = ${f(secondBF)}.${total ? ` BF_AB(D1) = ${f(first[0])} / ${f(first[1])} = ${f(firstBF)}. BF_AB(D1, D2) = BF_AB(D1) × BF_AB(D2 | D1) = ${f(firstBF)} × ${f(secondBF)} = ${f(answer)}.` : ' This is only the evidence contributed by D2 after learning from D1.'} Conditional independence given θ does not make the two batches marginally independent when θ is uncertain.`,
+    solution: {
+      formula: total ? 'BF_AB(D1, D2) = BF_AB(D1) × BF_AB(D2 | D1)' : 'BF_AB(D2 | D1) = P(D2 | D1, A) / P(D2 | D1, B)',
+      working: total
+        ? `${f(firstBF)} × (${f(second[0])} / ${f(second[1])}) = ${f(firstBF)} × ${f(secondBF)} = ${f(answer)}`
+        : `${f(second[0])} / ${f(second[1])} = ${f(secondBF)}`,
+      interpretation: `After D1, the parameter distributions are ${updated.map(m => `${m.name}: Beta(${m.a}, ${m.b})`).join('; ')}. Predict D2 using these updated distributions.${total ? ' Multiply the first-batch Bayes factor by this conditional second-batch Bayes factor to combine the evidence.' : ' This ratio measures only the additional evidence from D2; do not count D1 a second time.'} Conditional independence given θ does not make the batches marginally independent when θ is uncertain.`,
+    },
     source: book('13, 15, 22'),
   };
 }
@@ -246,6 +283,11 @@ function bayes(rng) {
       step('Overall probability of the observed data', total, 'P(data) = Σ P(model)P(data | model)', `${mixtureWorking(models, models.map(m => likelihood(m, successes, failures)))} = ${f(total)}`),
     ],
     explanation: `P(A | data) = P(A)P(data | A) / P(data) = ${posteriorWorking(models, successes, failures)} = ${f(updated[0].weight)}. Normalize over every possible machine.`,
+    solution: {
+      formula: 'P(A | data) = P(A)P(data | A) / P(data)',
+      working: `${posteriorWorking(models, successes, failures)} = ${f(updated[0].weight)}`,
+      interpretation: 'Divide Machine A’s weighted likelihood by the total weighted likelihood across every possible machine. This normalizes the posterior probabilities to sum to one.',
+    },
     source: book('3, 7'),
   };
 }
@@ -267,10 +309,17 @@ function sequences(rng) {
       step('Probability of zero detections', fixedSequence(p, 0, n), 'P(0) = (1 − p)^n', `(1 − ${f(p)})^${n} = ${f(fixedSequence(p, 0, n))}`),
       step('Probability of exactly one detection', n * fixedSequence(p, 1, n - 1), 'P(1) = n p (1 − p)^(n − 1)', `${n} × ${f(p)} × (1 − ${f(p)})^${n - 1} = ${f(n * fixedSequence(p, 1, n - 1))}`),
     ] : ordered ? [step('Probability of the successes in the specified positions', p ** k, 'Success contribution = p^k', `${f(p)}^${k} = ${f(p ** k)}`)] : [
-      step('Number of possible orders', choose(n, k), 'C(n, k) = n! / [k!(n − k)!]', `C(${n}, ${k}) = ${choose(n, k)}`, 'number'),
+      step('Number of possible orders', choose(n, k), 'C(n, k) = n! / [k!(n − k)!]', `C(${n}, ${k}) = ${choose(n, k)}`, 'number', 'integer'),
       step('Probability of one specified order', oneOrder, 'P(sequence) = p^k(1 − p)^(n − k)', `${f(p)}^${k} × (1 − ${f(p)})^${n - k} = ${f(oneOrder)}`),
     ],
     explanation: tail ? `P(at least 2) = 1 − (1 − ${f(p)})^${n} − ${n} × ${f(p)} × (1 − ${f(p)})^${n - 1} = ${f(answer)}.` : `P(${ordered ? 'this sequence' : 'this count'}) = ${ordered ? '' : `${choose(n, k)} × `}${f(p)}^${k} × (1 − ${f(p)})^${n - k} = ${f(answer)}. ${ordered ? 'A single specified order has no counting factor.' : 'All orders with these counts have equal probability and are mutually exclusive.'}`,
+    solution: {
+      formula: tail ? 'P(K ≥ 2) = 1 − P(K = 0) − P(K = 1)' : ordered ? 'P(sequence) = p^k(1 − p)^(n − k)' : 'P(K = k) = C(n, k)p^k(1 − p)^(n − k)',
+      working: tail
+        ? `1 − (1 − ${f(p)})^${n} − ${n} × ${f(p)} × (1 − ${f(p)})^${n - 1} = ${f(answer)}`
+        : `${ordered ? '' : `C(${n}, ${k}) × `}${f(p)}^${k} × (1 − ${f(p)})^${n - k} = ${f(answer)}`,
+      interpretation: tail ? 'Zero detections, exactly one detection, and at least two detections exhaust the possibilities. Subtracting the first two probabilities leaves the requested event.' : ordered ? 'Only one specified order is requested, so no binomial coefficient is needed. Multiply the success and failure probabilities for those positions.' : 'All orders with these counts have equal probability and are mutually exclusive. Multiply one ordered-sequence probability by the number of orders.',
+    },
     source: book('3, 7, 34'),
   };
 }
@@ -287,25 +336,40 @@ function beta(rng) {
     answer: (a + s) / (a + b + s + fails),
     hints: ['Update the beta distribution by adding successes to a and failures to b.', 'The mean of Beta(a′, b′) is a′ / (a′ + b′). Use both prior information and the observations.'],
     steps: [
-      step('Posterior success parameter a′', a + s, 'a′ = a + successes', `${a} + ${s} = ${a + s}`, 'number'),
-      step('Posterior failure parameter b′', b + fails, 'b′ = b + failures', `${b} + ${fails} = ${b + fails}`, 'number'),
+      step('Posterior success parameter a′', a + s, 'a′ = a + successes', `${a} + ${s} = ${a + s}`, 'number', 'integer'),
+      step('Posterior failure parameter b′', b + fails, 'b′ = b + failures', `${b} + ${fails} = ${b + fails}`, 'number', 'integer'),
     ],
     explanation: `The posterior is Beta(${a + s}, ${b + fails}). Its mean is E(θ | data) = (${a} + ${s}) / (${a} + ${b} + ${s} + ${fails}) = ${f((a + s) / (a + b + s + fails))}. This is an estimate of the underlying rate. In this Bernoulli model it also equals the probability of success on the next trial; it is not the probability that θ equals this exact value.`,
+    solution: {
+      formula: 'E(θ | data) = (a + s) / (a + b + s + f)',
+      working: `(${a} + ${s}) / (${a} + ${b} + ${s} + ${fails}) = ${f((a + s) / (a + b + s + fails))}`,
+      interpretation: `The posterior is Beta(${a + s}, ${b + fails}). Its mean estimates the underlying rate. In this Bernoulli model it also equals the next-success probability; it is not the probability that θ equals this exact value.`,
+    },
     source: book('8, 9'),
   };
   if (variant === 'update') return {
     title: 'Update a beta distribution', context: `A plant nursery models the germination rate as θ ~ Beta(${a}, ${b}). Seeds germinate independently conditional on the same θ.`,
-    prompt: askSuccessParameter ? `${fails} of ${s + fails} seeds fail to germinate. What is the updated first parameter a′ in Beta(a′, b′)?` : `${s} of ${s + fails} seeds germinate. What is the updated second parameter b′ in Beta(a′, b′)?`, answer: askSuccessParameter ? a + s : b + fails, unit: 'number',
+    prompt: askSuccessParameter ? `${fails} of ${s + fails} seeds fail to germinate. What is the updated first parameter a′ in Beta(a′, b′)?` : `${s} of ${s + fails} seeds germinate. What is the updated second parameter b′ in Beta(a′, b′)?`, answer: askSuccessParameter ? a + s : b + fails, unit: 'number', numberFormat: 'integer',
     hints: [askSuccessParameter ? 'Subtract the failed seeds from the total to find the successes.' : 'Count the seeds that failed to germinate.', 'A beta posterior adds successes to a and failures to b.'],
-    steps: [askSuccessParameter ? step('Number of successes', s, 'Successes = total − failures', `${s + fails} − ${fails} = ${s}`, 'number') : step('Number of failures', fails, 'Failures = total − successes', `${s + fails} − ${s} = ${fails}`, 'number')],
+    steps: [askSuccessParameter ? step('Number of successes', s, 'Successes = total − failures', `${s + fails} − ${fails} = ${s}`, 'number', 'integer') : step('Number of failures', fails, 'Failures = total − successes', `${s + fails} − ${s} = ${fails}`, 'number', 'integer')],
     explanation: `Beta(a + successes, b + failures) = Beta(${a} + ${s}, ${b} + ${fails}) = Beta(${a + s}, ${b + fails}). Therefore ${askSuccessParameter ? `a′ = ${a + s}` : `b′ = ${b + fails}`}.`, source: book('8'),
+    solution: {
+      formula: askSuccessParameter ? 'a′ = a + successes' : 'b′ = b + failures',
+      working: askSuccessParameter ? `${a} + ${s} = ${a + s}` : `${b} + ${fails} = ${b + fails}`,
+      interpretation: `Add the ${s} successes to the first parameter and the ${fails} failures to the second. The updated distribution is Beta(${a + s}, ${b + fails}).`,
+    },
   };
   if (variant === 'laplace') return {
     title: 'Laplace’s rule of succession', context: 'A uniform Beta(1, 1) prior describes an unknown success rate. All trials share this same rate and are independent conditional on it.',
     prompt: `You observe ${s} successes and ${fails} failures. What is the probability that the next trial succeeds?`, answer: (s + 1) / (s + fails + 2),
     hints: ['Update the uniform prior to Beta(1 + successes, 1 + failures).', 'For Beta(a′, b′), the next-success probability is a′ / (a′ + b′).'],
-    steps: [step('Updated success parameter a′', s + 1, 'a′ = 1 + successes', `1 + ${s} = ${s + 1}`, 'number'), step('Sum of posterior parameters', s + fails + 2, 'a′ + b′ = successes + failures + 2', `${s} + ${fails} + 2 = ${s + fails + 2}`, 'number')],
+    steps: [step('Updated success parameter a′', s + 1, 'a′ = 1 + successes', `1 + ${s} = ${s + 1}`, 'number', 'integer'), step('Sum of posterior parameters', s + fails + 2, 'a′ + b′ = successes + failures + 2', `${s} + ${fails} + 2 = ${s + fails + 2}`, 'number', 'integer')],
     explanation: `P(next success | data) = (${s} + 1) / (${s} + ${fails} + 2) = ${f((s + 1) / (s + fails + 2))}. This is Laplace’s rule with both successes and failures.`, source: book('8, 9'),
+    solution: {
+      formula: 'P(next success | data) = (s + 1) / (s + f + 2)',
+      working: `(${s} + 1) / (${s} + ${fails} + 2) = ${f((s + 1) / (s + fails + 2))}`,
+      interpretation: `The uniform prior updates to Beta(${s + 1}, ${fails + 1}). Its mean gives Laplace’s next-success probability, accounting for both successes and failures.`,
+    },
   };
   const posterior = variant === 'posterior-count', n = integer(rng, 3, 5), k = integer(rng, 1, n);
   const aa = a + (posterior ? s : 0), bb = b + (posterior ? fails : 0);
@@ -316,11 +380,16 @@ function beta(rng) {
     prompt: `What is the probability of exactly ${k} successes in the next ${n} trials, in any order?`, answer,
     hints: [posterior ? 'Update both beta parameters before making the prediction.' : 'Average the binomial probability across the whole beta prior.', 'Use C(n, k) × B(a′ + k, b′ + n − k) / B(a′, b′); do not substitute only the mean success rate.'],
     steps: posterior ? [
-      step('Posterior success parameter a′', aa, 'a′ = a + successes', `${a} + ${s} = ${aa}`, 'number'),
-      step('Posterior failure parameter b′', bb, 'b′ = b + failures', `${b} + ${fails} = ${bb}`, 'number'),
-      step('Number of possible future orders', choose(n, k), 'C(n, k)', `C(${n}, ${k}) = ${choose(n, k)}`, 'number'),
-    ] : [step('Number of possible orders', choose(n, k), 'C(n, k)', `C(${n}, ${k}) = ${choose(n, k)}`, 'number'), step('Probability of one specified order', betaSequence(a, b, k, n - k), 'B(a + k, b + n − k) / B(a, b)', `B(${a + k}, ${b + n - k}) / B(${a}, ${b}) = ${betaProduct(a, b, k, n - k)} = ${f(betaSequence(a, b, k, n - k))}`)],
+      step('Posterior success parameter a′', aa, 'a′ = a + successes', `${a} + ${s} = ${aa}`, 'number', 'integer'),
+      step('Posterior failure parameter b′', bb, 'b′ = b + failures', `${b} + ${fails} = ${bb}`, 'number', 'integer'),
+      step('Number of possible future orders', choose(n, k), 'C(n, k)', `C(${n}, ${k}) = ${choose(n, k)}`, 'number', 'integer'),
+    ] : [step('Number of possible orders', choose(n, k), 'C(n, k)', `C(${n}, ${k}) = ${choose(n, k)}`, 'number', 'integer'), step('Probability of one specified order', betaSequence(a, b, k, n - k), 'B(a + k, b + n − k) / B(a, b)', `B(${a + k}, ${b + n - k}) / B(${a}, ${b}) = ${betaProduct(a, b, k, n - k)} = ${f(betaSequence(a, b, k, n - k))}`)],
     explanation: `P(K = ${k}) = C(${n}, ${k}) × B(${aa + k}, ${bb + n - k}) / B(${aa}, ${bb}) = ${choose(n, k)} × [${betaProduct(aa, bb, k, n - k)}] = ${f(answer)}. ${posterior ? `The updated distribution is Beta(${aa}, ${bb}).` : 'This prediction includes uncertainty about θ.'} Each predictive factor uses the beta parameters updated by the preceding outcomes.`, source: book('8, 9, 12'),
+    solution: {
+      formula: posterior ? 'P(K = k | data) = C(n, k)B(a′ + k, b′ + n − k) / B(a′, b′)' : 'P(K = k) = C(n, k)B(a + k, b + n − k) / B(a, b)',
+      working: `C(${n}, ${k}) × B(${aa + k}, ${bb + n - k}) / B(${aa}, ${bb}) = ${choose(n, k)} × [${betaProduct(aa, bb, k, n - k)}] = ${f(answer)}`,
+      interpretation: `${posterior ? `Use the updated distribution Beta(${aa}, ${bb}) to predict the future count.` : 'Average over the whole beta prior to include uncertainty about θ.'} Each predictive factor updates after the preceding outcome. Multiply by the number of possible orders; substituting only the beta mean would omit uncertainty about θ.`,
+    },
   };
 }
 
@@ -345,6 +414,11 @@ function mixtures(rng) {
     hints: ['First calculate the event probability separately under each model.', 'Weight those predictions by the prior model probabilities and add them.'],
     steps: models.map((m, i) => step(`Predictive probability under ${m.name}`, values[i], m.type === 'fixed' ? 'P(K = k) = C(n, k)p^k(1 − p)^(n − k)' : 'P(K = k) = C(n, k)B(a + k, b + n − k) / B(a, b)', `${choose(n, k)} × ${sequenceWorking(m, k, n - k)} = ${f(values[i])}`)),
     explanation: `P(data) = Σ P(model)P(data | model) = ${mixtureWorking(models, values)} = ${f(answer)}. Use prior model weights because no data have yet been observed.`, source: book('12, 15, 22'),
+    solution: {
+      formula: 'P(K = k) = Σ P(model)P(K = k | model)',
+      working: `${mixtureWorking(models, values)} = ${f(answer)}`,
+      interpretation: 'Average the whole count prediction from each competing model. Use prior model weights because no data have been observed. One model and one shared rate describe the entire batch.',
+    },
   };
 }
 
@@ -373,6 +447,11 @@ function forecasterPrediction(rng) {
       ...post.map((m, i) => step(`Next-success probability within ${m.name}`, predictions[i], 'P(next success | model, data) = (a + s) / (a + b + s + f)', `${m.a} / (${m.a} + ${m.b}) = ${f(predictions[i])}`)),
     ],
     explanation: `${post.map(m => `${m.name} has posterior probability ${f(m.weight)} and updates to Beta(${m.a}, ${m.b})`).join('; ')}. P(next success | data) = ${mixtureWorking(post, predictions)} = ${f(answer)}. The model probabilities describe uncertainty about which forecaster to use; each beta distribution describes uncertainty about θ within that model. Update both before averaging.`,
+    solution: {
+      formula: 'P(next success | data) = Σ P(model | data)P(next success | model, data)',
+      working: `${post.map(m => `${f(m.weight)} × (${m.a} / (${m.a} + ${m.b}))`).join(' + ')} = ${f(answer)}`,
+      interpretation: `The updated distributions are ${post.map(m => `${m.name}: Beta(${m.a}, ${m.b})`).join('; ')}. Update both the model probabilities and the beta distributions before averaging: they represent uncertainty between models and within each model, respectively.`,
+    },
     source: book('12, 13'),
   };
 }
@@ -398,6 +477,14 @@ function prediction(rng) {
     hints: ['Update model probabilities using the observed sequence; also update the beta parameters, if present.', futureS === 1 ? 'Average the next-success predictions using posterior model weights.' : 'Calculate the entire future event within each model, then average. Do not square the model-averaged one-step prediction.'],
     steps: [...modelLikelihoodSteps(models, s, fails), step('Posterior probability of Model A', post[0].weight, 'P(A | data) = P(A)P(data | A) / P(data)', `${posteriorWorking(models, s, fails)} = ${f(post[0].weight)}`)],
     explanation: `Posterior weights are ${post.map(m => `${m.name}: ${f(m.weight)}`).join(', ')}. ${post.filter(m => m.type === 'beta').map(m => `${m.name} updates to Beta(${m.a}, ${m.b}).`).join(' ')} Within-model future probabilities are ${post.map((m, i) => `${m.name}: ${count ? `${choose(futureS + futureF, futureS)} × ` : ''}${sequenceWorking(m, futureS, futureF)} = ${f(values[i])}`).join('; ')}. The final prediction is ${mixtureWorking(post, values)} = ${f(answer)}.`, source: book('7, 9, 12, 22'),
+    solution: {
+      preparation: [step('Posterior probability of Model B', post[1].weight,
+        'P(B | data) = P(B)P(data | B) / P(data)',
+        `${posteriorWorking(models, s, fails, 1)} = ${f(post[1].weight)}`)],
+      formula: 'P(future event | data) = Σ P(model | data)P(future event | model, data)',
+      working: `${post.map(m => `${f(m.weight)} × [${count ? `C(${futureS + futureF}, ${futureS}) × ` : ''}${sequenceWorking(m, futureS, futureF)}]`).join(' + ')} = ${f(answer)}`,
+      interpretation: `${post.filter(m => m.type === 'beta').map(m => `${m.name} updates to Beta(${m.a}, ${m.b}).`).join(' ')} Average the within-model predictions using posterior model probabilities.${count ? ' Include all three orders with two successes and one failure.' : futureS > 1 ? ' Predict both successes jointly within each model; do not square the overall next-success probability.' : ' For an uncertain beta rate, use the updated beta mean.'} The same model and rate describe the past and future trials.`.trim(),
+    },
   };
 }
 
@@ -412,6 +499,11 @@ function bayesFactors(rng) {
       prompt: reciprocal ? 'What is BF_BA?' : 'What is BF_AC?', answer: reciprocal ? 1 / first : first * second, unit: 'ratio',
       hints: [reciprocal ? 'Reversing the comparison swaps numerator and denominator.' : 'Write out the two likelihood ratios and cancel the shared Model B term.', reciprocal ? 'Take the reciprocal.' : 'Multiply BF_AB by BF_BC.'],
       steps: [], explanation: reciprocal ? `BF_BA = 1 / BF_AB = 1 / ${first} = ${f(1 / first)}.` : `BF_AC = BF_AB × BF_BC = ${first} × ${second} = ${first * second}. The Model B likelihood cancels.`, source: book('22'),
+      solution: {
+        formula: reciprocal ? 'BF_BA = 1 / BF_AB' : 'BF_AC = BF_AB × BF_BC',
+        working: reciprocal ? `1 / ${first} = ${f(1 / first)}` : `${first} × ${second} = ${first * second}`,
+        interpretation: reciprocal ? 'Reversing the comparison swaps its numerator and denominator, so take the reciprocal.' : 'The Model B likelihood cancels when the two likelihood ratios are multiplied. Both Bayes factors must concern exactly the same data.',
+      },
     };
   }
   if (variant === 'both') {
@@ -423,6 +515,11 @@ function bayesFactors(rng) {
       hints: ['Combine BF_CB and BF_BA to obtain BF_CA: the Model B likelihood cancels.', 'The requested comparison goes from A to C. Reverse BF_CA by taking its reciprocal.'],
       steps: [step('Bayes factor BF_CA', ca, 'BF_CA = BF_CB × BF_BA', `${cb} × ${ba} = ${f(ca)}`, 'ratio')],
       explanation: `BF_AC = 1 / BF_CA = 1 / (BF_CB × BF_BA) = 1 / (${cb} × ${ba}) = ${f(1 / ca)}. Both transitivity and reversal are needed.`, source: book('22'),
+      solution: {
+        formula: 'BF_AC = 1 / (BF_CB × BF_BA)',
+        working: `1 / (${cb} × ${ba}) = ${f(1 / ca)}`,
+        interpretation: 'Multiplying the two given Bayes factors cancels Model B and gives the evidence for C relative to A. Reverse that comparison to obtain the requested evidence for A relative to C. All comparisons concern the same data.',
+      },
     };
   }
   if (variant === 'odds') {
@@ -434,6 +531,11 @@ function bayesFactors(rng) {
       hints: ['Convert the prior probability to odds A:B, then multiply by BF_AB.', 'Convert posterior odds O to a probability using O / (1 + O).'],
       steps: [step('Prior odds A:B', priorOdds, 'Prior odds = P(A) / P(B)', `${f(w)} / ${f(1 - w)} = ${f(priorOdds)}`, 'ratio'), step('Posterior odds A:B', odds, 'Posterior odds = prior odds × BF_AB', `${f(priorOdds)} × ${bf} = ${f(odds)}`, 'ratio')],
       explanation: `P(A | data) = posterior odds / (1 + posterior odds) = ${f(odds)} / (1 + ${f(odds)}) = ${f(answer)}. The Bayes factor updates the prior odds.`, source: book('3, 22'),
+      solution: {
+        formula: 'P(A | data) = posterior odds / (1 + posterior odds)',
+        working: `${f(odds)} / (1 + ${f(odds)}) = ${f(answer)}`,
+        interpretation: 'The Bayes factor multiplies the prior odds. Convert the resulting posterior odds to a probability; a Bayes factor alone is not a posterior probability.',
+      },
     };
   }
   if (variant === 'forecasters') {
@@ -456,6 +558,11 @@ function bayesFactors(rng) {
       hints: ['Compute the prior predictive probability of this same count under each beta prior. Include all possible orders.', 'Divide the largest predictive probability by the smallest. Use unrounded values; the common counting factor cancels in the ratio.'],
       steps: models.map(model => step(`Count probability under ${model.name}`, model.prediction, 'P(K = k) = C(n, k)B(a + k, b + n − k) / B(a, b)', `${choose(n, k)} × [${betaProduct(model.a, model.b, k, n - k)}] = ${f(model.prediction)}`)),
       explanation: `${best.name} predicts this count best (${f(best.prediction)}), and ${worst.name} predicts it worst (${f(worst.prediction)}). BF(best, worst) = ${f(best.prediction)} / ${f(worst.prediction)} = ${f(answer)}. These data are ${f(answer)} times as probable under ${best.name} as under ${worst.name}. This compares predictive evidence for these data, not posterior model probabilities.`,
+      solution: {
+        formula: 'BF(best, worst) = P(data | best) / P(data | worst)',
+        working: `${f(best.prediction)} / ${f(worst.prediction)} = ${f(answer)}`,
+        interpretation: `${best.name} predicts this count best, and ${worst.name} predicts it worst. The ratio compares their predictive evidence for these same data, not their posterior model probabilities. The common counting factor cancels.`,
+      },
       source: book('12, 22'),
     };
   }
@@ -468,6 +575,11 @@ function bayesFactors(rng) {
     hints: ['Calculate the marginal probability of the whole observed sequence under each model.', 'Divide Model B’s integrated prediction by Model A’s fixed-rate prediction. Model prior probabilities are not part of this Bayes factor.'],
     steps: [step('Sequence probability under Model A', point, 'P(data | A) = p^s(1 − p)^f', `${p}^${s} × (1 − ${p})^${fails} = ${f(point)}`), step('Sequence probability under Model B', alternative, 'P(data | B) = B(a + s, b + f) / B(a, b)', `B(${a + s}, ${b + fails}) / B(${a}, ${b}) = ${betaProduct(a, b, s, fails)} = ${f(alternative)}`)],
     explanation: `BF_BA = P(data | B) / P(data | A) = ${f(alternative)} / ${f(point)} = ${f(answer)}. It compares predictions for the same ordered sequence.`, source: book('12, 17, 22'),
+    solution: {
+      formula: 'BF_BA = P(data | B) / P(data | A)',
+      working: `[${betaProduct(a, b, s, fails)}] / [${p}^${s} × (1 − ${p})^${fails}] = ${f(answer)}`,
+      interpretation: 'Compare the predictions for the same specified order. Model B averages over its beta prior, while Model A uses its fixed rate. Model prior probabilities do not enter the Bayes factor.',
+    },
   };
 }
 
@@ -507,6 +619,8 @@ export function generateExam(seed) {
   const intro = `A box of toys comes from one of three workshops. Every toy in this exercise comes from that same workshop. A success means a toy passes inspection. Outcomes are independent conditional on the workshop’s fixed θ. At the Garden workshop, one shared unknown θ has the beta prior listed below. The first specified sequence contains ${s} successes and ${fails} failure${fails === 1 ? '' : 's'}. In recorded order it is (${firstOrder.join(', ')}), where S means pass and F means failure. The table gives the priors before any inspections.`;
   const later = `${intro} One additional toy then ${extraS ? 'passes' : 'fails'} inspection, giving ${s + extraS} successes and ${fails + extraF} failure${fails + extraF === 1 ? '' : 's'} in total.`;
   const common = { table: modelTable(models), source: book('7, 8, 9, 12, 22') };
+  const firstMarginal = marginal(models, s, fails);
+  const allMarginal = marginal(models, s + extraS, fails + extraF);
   const items = [
     {
       ...common, title: '1. Identify the workshop', context: intro,
@@ -514,6 +628,14 @@ export function generateExam(seed) {
       hints: ['Calculate the sequence probability under each workshop.', 'Weight each likelihood by its prior model probability and normalize.'],
       steps: modelLikelihoodSteps(models, s, fails),
       explanation: `P(${target.name} | first sequence) = ${posteriorWorking(models, s, fails, targetIndex)} = ${f(post[targetIndex].weight)}. Within Garden, the posterior is Beta(${post[1].a}, ${post[1].b}).`,
+      solution: {
+        preparation: [step('Overall probability of the first ordered sequence', firstMarginal,
+          'P(data) = Σ P(model)P(data | model)',
+          `${mixtureWorking(models, models.map(m => likelihood(m, s, fails)))} = ${f(firstMarginal)}`)],
+        formula: 'P(model | data) = P(model)P(data | model) / P(data)',
+        working: `${posteriorWorking(models, s, fails, targetIndex)} = ${f(post[targetIndex].weight)}`,
+        interpretation: `Weight the ${target.name} likelihood by its prior probability and normalize over all three workshops. Within Garden, the parameter posterior is Beta(${post[1].a}, ${post[1].b}). One workshop generated the whole observed sequence.`,
+      },
     },
     {
       ...common, title: '2. Predict the next inspection', context: intro,
@@ -521,6 +643,14 @@ export function generateExam(seed) {
       hints: ['Use posterior workshop probabilities from the first sequence.', 'Garden’s next-pass probability uses its updated beta mean; the fixed workshop rates do not change.'],
       steps: [step('Posterior probability of Garden', post[1].weight, 'P(Garden | data) = prior × likelihood / marginal likelihood', `${posteriorWorking(models, s, fails, 1)} = ${f(post[1].weight)}`), step('Next-pass probability within Garden', post[1].a / (post[1].a + post[1].b), 'P(next success | Garden, data) = a′ / (a′ + b′)', `${post[1].a} / (${post[1].a} + ${post[1].b}) = ${f(post[1].a / (post[1].a + post[1].b))}`)],
       explanation: `P(next pass | first sequence) = ${mixtureWorking(post, post.map(m => likelihood(m, 1, 0)))} = ${f(next)}. Both the model weights and Garden’s parameter distribution reflect the first sequence.`,
+      solution: {
+        preparation: [0, 2].map(i => step(`Posterior probability of ${models[i].name}`, post[i].weight,
+          'P(model | data) = P(model)P(data | model) / P(data)',
+          `${posteriorWorking(models, s, fails, i)} = ${f(post[i].weight)}`)),
+        formula: 'P(next success | data) = Σ P(model | data)P(next success | model, data)',
+        working: `${post.map(m => `${f(m.weight)} × [${sequenceWorking(m, 1, 0)}]`).join(' + ')} = ${f(next)}`,
+        interpretation: `Both the workshop probabilities and Garden’s parameter distribution reflect the first sequence. Garden now uses Beta(${post[1].a}, ${post[1].b}); the fixed rates in Harbor and Meadow do not change. Average all three next-pass predictions.`,
+      },
     },
     {
       ...common, title: '3. Update after another observation', context: later,
@@ -528,6 +658,11 @@ export function generateExam(seed) {
       hints: ['Use the previous posterior as the prior for this new observation.', 'Predict the new outcome within each updated workshop model, then normalize their weighted predictions.'],
       steps: post.map(m => step(`Probability of the additional ${extraS ? 'pass' : 'failure'} under ${m.name}`, likelihood(m, extraS, extraF), 'Use the posterior predictive probability within this model', `${sequenceWorking(m, extraS, extraF)} = ${f(likelihood(m, extraS, extraF))}`)),
       explanation: `P(${target.name} | all observations) = ${f(post[targetIndex].weight)} × ${f(likelihood(post[targetIndex], extraS, extraF))} / (${mixtureWorking(post, post.map(m => likelihood(m, extraS, extraF)))}) = ${f(extraPost[targetIndex].weight)}. Equivalently update the original priors with all ${s + extraS} successes and ${fails + extraF} failures.`,
+      solution: {
+        formula: 'P(H | D, x) = P(H | D)P(x | H, D) / P(x | D)',
+        working: `${f(post[targetIndex].weight)} × ${f(likelihood(post[targetIndex], extraS, extraF))} / (${mixtureWorking(post, post.map(m => likelihood(m, extraS, extraF)))}) = ${f(extraPost[targetIndex].weight)}`,
+        interpretation: `Here H is the ${target.name}, D is the first sequence, and x is the additional outcome. Use the previous posterior as the prior for this new outcome. This gives the same result as updating the original priors with all ${s + extraS} successes and ${fails + extraF} failures.`,
+      },
     },
     {
       ...common, title: '4. Correct the order of the observations',
@@ -536,6 +671,14 @@ export function generateExam(seed) {
       hints: ['Count successes and failures in the corrected sequence. Has either count changed?', 'With a shared constant rate and conditional independence, each model assigns the same probability to every order with these counts. Do not treat the correction as new data.'],
       steps: modelLikelihoodSteps(models, s + extraS, fails + extraF),
       explanation: `The corrected sequence still contains ${s + extraS} successes and ${fails + extraF} failure${fails + extraF === 1 ? '' : 's'}. Under each fixed-rate model its probability is θ^s(1 − θ)^f; integrating this same expression under Garden also depends only on the counts. Thus P(${target.name} | corrected sequence) = ${posteriorWorking(models, s + extraS, fails + extraF, targetIndex)} = ${f(extraPost[targetIndex].weight)}, unchanged from part 3. The working groups successes first to evaluate the likelihood from the counts. This is one specified order, so no binomial coefficient is needed. Order invariance follows from the models stated here; it is not a rule for every time-dependent process.`,
+      solution: {
+        preparation: [step('Overall probability of the corrected ordered sequence', allMarginal,
+          'P(data) = Σ P(model)P(data | model)',
+          `${mixtureWorking(models, models.map(m => likelihood(m, s + extraS, fails + extraF)))} = ${f(allMarginal)}`)],
+        formula: 'P(model | data) = P(model)P(data | model) / P(data)',
+        working: `${posteriorWorking(models, s + extraS, fails + extraF, targetIndex)} = ${f(extraPost[targetIndex].weight)}`,
+        interpretation: `The corrected sequence still has ${s + extraS} successes and ${fails + extraF} failures, so the posterior for the ${target.name} is unchanged from part 3. Under these shared-rate, conditionally independent models, each likelihood depends only on those counts. The working groups successes first to evaluate one specified order; no binomial coefficient is needed. Reordering is not new data, and order invariance is not a rule for every time-dependent process.`,
+      },
     },
     {
       ...common, title: '5. Predict several future inspections', context: later,
@@ -543,6 +686,14 @@ export function generateExam(seed) {
       hints: ['Within each workshop, calculate the joint probability of all future passes.', 'Average those joint probabilities using the latest posterior workshop weights. Do not raise the overall next-pass probability to a power.'],
       steps: extraPost.map(m => step(`Probability of ${future} future passes under ${m.name}`, likelihood(m, future, 0), m.type === 'fixed' ? 'P(all pass | θ) = θ^m' : 'P(all pass | updated beta) = B(a′ + m, b′) / B(a′, b′)', `${sequenceWorking(m, future, 0)} = ${f(likelihood(m, future, 0))}`)),
       explanation: `Posterior workshop weights are ${extraPost.map(m => `${m.name}: ${f(m.weight)}`).join(', ')}. Garden’s joint prediction is ${betaProduct(extraPost[1].a, extraPost[1].b, future, 0)} = ${f(likelihood(extraPost[1], future, 0))}. P(all ${future} pass | all data) = ${mixtureWorking(extraPost, extraPost.map(m => likelihood(m, future, 0)))} = ${f(joint)}. Each beta predictive factor updates after the preceding success; future outcomes share the same workshop and rate.`,
+      solution: {
+        preparation: extraPost.map((m, i) => step(`Posterior probability of ${m.name} after all observations`, m.weight,
+          'P(model | data) = P(model)P(data | model) / P(data)',
+          `${posteriorWorking(models, s + extraS, fails + extraF, i)} = ${f(m.weight)}`)),
+        formula: 'P(future event | data) = Σ P(model | data)P(future event | model, data)',
+        working: `${extraPost.map(m => `${f(m.weight)} × [${sequenceWorking(m, future, 0)}]`).join(' + ')} = ${f(joint)}`,
+        interpretation: `Average the joint predictions using workshop probabilities updated by all observations. Garden uses Beta(${extraPost[1].a}, ${extraPost[1].b}), and each predictive factor updates after the preceding success. Future outcomes share the same workshop and rate; do not raise the overall next-pass probability to a power.`,
+      },
     },
   ];
   return contextualizeExam(items.map((item, i) => finish('prediction', seed, item, `-exam-${i + 1}`)), seed % 5).map(polishQuestion);

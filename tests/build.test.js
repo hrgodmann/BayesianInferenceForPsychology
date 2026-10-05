@@ -10,7 +10,8 @@ const publicFiles = {
   'app.js': 'import { question } from "./questions.js"; export const html = `<img src="./assets/village.png">`; export { question };',
   'questions.js': 'import { context } from "./contexts.js?locale=en#story"; export const question = context;',
   'contexts.js': 'export const context = "A toy passes inspection.";',
-  'theme.css': 'body { background: url("./assets/grain.svg?texture=paper#grain"); }',
+  'theme.css': 'body { background: url("./assets/grain.svg?texture=paper#grain"); } @font-face { font-family: Example; src: url(fonts/example.woff2); }',
+  'fonts/example.woff2': Buffer.from([0x77, 0x4f, 0x46, 0x32]),
   'assets/favicon.svg': '<svg xmlns="http://www.w3.org/2000/svg"><text>PP</text></svg>',
   'assets/village.png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0xff, 0xfe]),
   'assets/grain.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>',
@@ -65,6 +66,7 @@ test('production build versions the complete module and asset graph without chan
   reference(questions, /from "([^\"]*contexts\.js[^\"]*)"/, revision, 'contexts.js', { locale: 'en' }, '#story');
   reference(app, /src="([^\"]*village\.png[^\"]*)"/, revision, 'assets/village.png');
   reference(css, /url\("([^\"]*)"\)/, revision, 'assets/grain.svg', { texture: 'paper' }, '#grain');
+  reference(css, /src: url\(([^)]*)\)/, revision, 'fonts/example.woff2');
   assert.ok(index.includes('href="#home"'));
   assert.ok(index.includes('href="https://example.org/help?q=1#answer"'));
   assert.deepEqual(await readFile(join(paths.outputDirectory, 'assets/village.png')), publicFiles['assets/village.png']);

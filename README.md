@@ -19,6 +19,8 @@ Every calculation family has five story settings, including its original setting
 
 Questions and solutions open at the start of their cards. “Back to calculations” restores the selected card and list position; the logo opens the top of the home page, and Practice opens the calculation list. Browser Back/Forward restores each page's position, while inline guidance and Help keep the current reading position.
 
+Equations use locally bundled KaTeX, with real fractions, powers, subscripts, sums, binomial coefficients, and accessible MathML. Worked solutions show formulas, numerical substitutions, an explicit final rounding step, and a short interpretation. Submitted answers appear beside the correct answer in the student's original notation. Counts and beta parameters display as integers; this does not change grading precision. Rounded working uses approximately-equal signs, and calculations retain their full precision internally.
+
 The streams also include central calculations from the assigned book chapters. General-law exercises distinguish the probability of a law from the probability of the next success, including unequal model priors and failures that rule out the stated error-free law. Sequential evidence exercises update parameter distributions between batches. Beta-forecaster exercises offer guided checks of every posterior model weight and within-model prediction before averaging. These additions use the existing seven cards and do not change the five-part exam scenario.
 
 ## Run locally
@@ -38,6 +40,8 @@ For browser checks, start the preview and run `node tests/browser.mjs` with Play
 
 `node tests/browser-navigation.mjs` checks scroll destinations, return to the selected calculation, browser Back/Forward restoration, inline guidance, Help, and keyboard focus on desktop and mobile with normal and reduced motion. It uses the same Playwright configuration.
 
+`node tests/browser-presentation.mjs` checks all 135 standalone template/story combinations and 25 exam-part/story combinations at 320, 390, 768, and 1440 pixels, including rendered equations, MathML, guided checks, answer comparison, font loading, and scroll stability. It uses the same Playwright configuration.
+
 ## Publish on GitHub Pages
 
 1. Commit the platform files and push to `main` in `hrgodmann/BayesianInferenceForPsychology`.
@@ -53,9 +57,12 @@ The workflow runs the unit tests, then `npm run build` copies only the public `s
 - `site/questions.js` exports the skill catalog, `generateQuestion(skillId, seed)`, and `generateExam(seed)`. Each question includes a full-precision answer, units, display precision, numerical working steps, hints, and source metadata.
 - `site/contexts.js` and `site/exam-contexts.js` apply the five story settings to the complete question, including its tables, hints, guided steps, and explanation. Story selection does not consume the numerical generator's random stream. Context IDs are internal verification metadata, not saved progress.
 - `site/engine.js` handles numeric parsing, rounding, and grading.
+- `site/math-display.js` typesets the existing mathematical notation without supplying any values to the calculation engine or grader. `site/vendor/katex/` contains the pinned renderer, fonts, license, and provenance; it needs no CDN or package installation.
 - `site/app.js` renders the interface. All assets use relative paths; the site works under a GitHub Pages repository path.
 
 Seeds make generated questions reproducible in tests. `tests/audit-math.test.js` independently reconstructs answers and intermediate steps using exact BigInt fractions and factorial beta integrals from the displayed inputs. It checks final rounding, fraction/decimal-comma/percentage acceptance, adjacent incorrect answers, and displayed working. Each skill and exam scenario is checked with consecutive seeds, seeds spread across the full 32-bit range, and integer-boundary seeds. Set `BAYESVILLE_AUDIT_SEEDS` to increase the default 2,500 seeds in each main sample. Add mathematical regression tests for new exercise families, including source-assessment benchmark calculations with independent expected results.
+
+`tests/presentation.test.js` independently evaluates final numerical substitutions and supplementary model-weight calculations with exact rational arithmetic, then checks that the typeset fractions and powers preserve their meaning. Set `BAYESVILLE_PRESENTATION_SEEDS` to increase its default 2,500 seeds in each main sample. `tests/math-display.test.js` covers notation, rounding symbols, safe rendering, and local font references. These tests all run with `npm test` and in the existing publication workflow.
 
 Answers accept decimals, decimal commas, fractions, and percentages for probabilities. Final answers are checked after rounding to the precision displayed, with exact halfway values rounded up. Probabilities close to zero or one use four decimal places, increasing to six or eight if necessary to avoid rounding a possible event to impossibility or an uncertain event to certainty. Intermediate calculations keep full precision; guided-step checks do not feed rounded values into later calculations.
 
@@ -63,4 +70,4 @@ Answers accept decimals, decimal commas, fractions, and percentages for probabil
 
 The app does not read or write local storage, session storage, cookies, or a backend. It holds only the current question (or linked exam scenario) in memory. Leaving practice or reloading discards the current inputs and scenario. There are no accounts, saved sessions, attempts, scores, bookmarks, or review lists. Storage from earlier versions is not read or reused. Temporary scroll positions let Back/Forward and “Back to calculations” return to the previous place; these positions disappear on reload and contain no questions or answers.
 
-The visual theme uses the supplied autumn village artwork, minimally edited to add an empty wooden playground in the foreground, in `site/assets/autumn-village.png`. `site/styles.css` and `site/autumn.css` provide the existing paper surfaces and typography; `site/calculations.css` adds the calculation workbook layout. Fonts come from the device, without external font requests.
+The visual theme uses the supplied autumn village artwork, minimally edited to add an empty wooden playground in the foreground, in `site/assets/autumn-village.png`. `site/styles.css` and `site/autumn.css` provide the existing paper surfaces and typography; `site/calculations.css` adds the calculation workbook layout. Text fonts come from the device and mathematical fonts are bundled locally, without external font requests.

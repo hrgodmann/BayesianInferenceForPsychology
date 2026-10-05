@@ -35,6 +35,12 @@ export async function buildSite({
   for (const path of paths) {
     let content = files.get(path);
     if (/\.(?:html|css|js|mjs)$/.test(path)) {
+      // Vendored stylesheets (including KaTeX) use bare relative font URLs.
+      // Normalize these to the same asset path form before versioning below.
+      if (path.endsWith('.css')) content = content.toString().replace(/url\((['"]?)([^'"()\s]+)\1\)/g, (match, quote, reference) => {
+        if (/^(?:[a-z][a-z\d+.-]*:|\/|#|\.)/i.test(reference)) return match;
+        return `url(${quote}./${reference}${quote})`;
+      });
       // Match quoted relative references and unquoted CSS url(...). Resolve
       // against the referring file and touch only files in the public tree.
       content = content.toString().replace(/(["'(])(\.{1,2}\/[^"'()\s<>`]+)(["')])/g,

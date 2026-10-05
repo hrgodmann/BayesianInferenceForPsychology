@@ -57,13 +57,14 @@ try {
   ({ context } = await command('browsingContext.create', { type: 'tab' }));
   await command('browsingContext.setViewport', { context, viewport: { width: 320, height: 844 } });
   await command('browsingContext.navigate', { context, url: base, wait: 'complete' });
+  await evaluate("document.querySelector('.hero-art img').decode()");
   const home = JSON.parse(await evaluate(`JSON.stringify({cards:document.querySelectorAll('[data-action="skill"]').length,image:document.querySelector('.hero-art img').naturalWidth,overflow:document.documentElement.scrollWidth>innerWidth})`));
   assert.equal(home.cards, 7); assert.ok(home.image > 0); assert.equal(home.overflow, false);
 
   const cases = new Map();
   for (const skill of skills) for (let seed = 0; seed < 1000; seed++) {
     const q = generateQuestion(skill.id, seed), key = `${skill.id}:${q.contextId}:${q.title}`;
-    if (!cases.has(key)) cases.set(key, { skill: skill.id, seed, title: q.title, answer: formatAnswer(q) });
+    if (!cases.has(key)) cases.set(key, { skill: skill.id, seed, title: q.title, answer: q.numberFormat === 'integer' ? String(q.answer) : formatAnswer(q) });
   }
   for (const item of cases.values()) {
     const result = JSON.parse(await evaluate(`(async()=>{
@@ -79,11 +80,12 @@ try {
       const input=document.querySelector('#numeric-answer');input.value=item.answer;input.dispatchEvent(new Event('input',{bubbles:true}));
       document.querySelector('#answer-form').requestSubmit();
       await wait('.result-card');
-      return JSON.stringify({title,correct:!!document.querySelector('.result-card.correct'),answer:document.querySelector('.correct-answer strong').textContent,overflow:document.documentElement.scrollWidth>innerWidth,focus:document.activeElement.id,cookies:document.cookie});
+      return JSON.stringify({title,correct:!!document.querySelector('.result-card.correct'),answer:document.querySelector('.correct-answer strong').textContent,overflow:document.documentElement.scrollWidth>innerWidth,focus:document.activeElement.id,cookies:document.cookie,math:document.querySelectorAll('.katex').length,mathml:document.querySelectorAll('.katex > .katex-mathml > math').length,fallback:document.querySelectorAll('.math-fallback,.katex-error').length});
     })()`));
     assert.equal(result.title, item.title); assert.equal(result.correct, true, item.title);
     assert.equal(result.answer, item.answer); assert.equal(result.overflow, false, item.title);
     assert.equal(result.focus, 'result-title'); assert.equal(result.cookies, '');
+    assert.ok(result.math > 0, item.title); assert.equal(result.mathml, result.math, item.title); assert.equal(result.fallback, 0, item.title);
   }
   const screenshot = await command('browsingContext.captureScreenshot', { context, origin: 'viewport', format: { type: 'image/png' } });
   await mkdir('.artifacts', { recursive: true });

@@ -92,7 +92,7 @@ function copyText(value, transform) {
 function withText(question, replacements) {
   const result = structuredClone(question);
   // Never traverse metadata or source records. These are not narrative text.
-  for (const key of ['title', 'context', 'prompt', 'table', 'hints', 'steps', 'explanation']) {
+  for (const key of ['title', 'context', 'prompt', 'table', 'hints', 'steps', 'explanation', 'solution']) {
     if (key in result) result[key] = copyText(result[key], text => substitute(text, replacements));
   }
   return result;

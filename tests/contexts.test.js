@@ -5,7 +5,7 @@ import { skills, generateQuestion, generateExam } from '../site/questions.js';
 import { contextCatalog, contextualizeQuestion } from '../site/contexts.js';
 import { examContexts, contextualizeExam } from '../site/exam-contexts.js';
 
-const visibleText = q => JSON.stringify([q.title, q.context, q.prompt, q.table, q.hints, q.steps, q.explanation]);
+const visibleText = q => JSON.stringify([q.title, q.context, q.prompt, q.table, q.hints, q.steps, q.explanation, q.solution]);
 const numericalSolution = q => ({
   answer: q.answer, unit: q.unit, decimals: q.decimals, source: q.source,
   steps: q.steps.map(({ answer, unit, decimals, working }) => ({ answer, unit, decimals, working })),

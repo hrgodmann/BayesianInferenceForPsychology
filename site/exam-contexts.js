@@ -118,6 +118,8 @@ export function contextualizeExam(items, index) {
       .replace(/all (\d+) pass/g, 'all $1 succeed');
   }
 
+  // Translate the structured solution along with the legacy explanation, so
+  // rendered formulas and interpretations always use this exam's source names.
   const result = items.map(item => ({ ...mapText(item, translate), ...metadata }));
   result[0].title = '1. Identify the source';
   result[0].context = intro;

@@ -170,23 +170,23 @@ try {
     await page.locator('[data-action="exam"]').click();
     for (const [part, q] of exam.entries()) {
       await page.locator('.question-card').waitFor();
-      assert.equal(await page.locator('.question-context').innerText(), q.context);
-      assert.equal(await page.locator('.question-prompt').innerText(), q.prompt);
-      const rows = await page.locator('tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent)));
+      assert.equal(await page.locator('.question-context').getAttribute('data-source'), q.context);
+      assert.equal(await page.locator('.question-prompt').getAttribute('data-source'), q.prompt);
+      const rows = await page.locator('tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.getAttribute('data-source'))));
       assert.deepEqual(rows, q.table.rows.map(row => row.map(String)));
       await page.locator('[data-action="hint"]').click();
-      assert.ok((await page.locator('#hint-panel').innerText()).includes(q.hints[0]));
+      assert.equal(await page.locator('#hint-panel p').first().getAttribute('data-source'), q.hints[0]);
       await page.locator('[data-action="toggle-guided"]').click();
       await noOverflow(`Exam ${seed}, part ${part + 1}: guidance`);
       await page.locator('#numeric-answer').fill(formatAnswer(q));
       await page.locator('#numeric-answer').press('Enter');
       await page.locator('.result-card.correct').waitFor();
-      assert.equal(await page.locator('.explanation').innerText(), q.explanation);
+      assert.equal(await page.locator('.explanation').getAttribute('data-source'), q.solution.interpretation);
       await noOverflow(`Exam ${seed}, part ${part + 1}: result`);
       if (part === 4) await page.screenshot({ path: `.artifacts/story-exam-${seed}-320.png`, fullPage: true });
       await page.locator('[data-action="next"]').click();
     }
-    assert.notEqual(await page.locator('.question-context').innerText(), exam[0].context, 'New scenario changes the story');
+    assert.notEqual(await page.locator('.question-context').getAttribute('data-source'), exam[0].context, 'New scenario changes the story');
   }
   console.log('Passed: all five exam stories, every linked part, hints, worked solutions, and fresh scenarios at 320px.');
 
