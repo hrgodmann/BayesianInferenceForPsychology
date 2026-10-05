@@ -48,13 +48,13 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
 .site-header nav { color: #6c5438; font-size: .88rem; gap: 34px; flex-wrap: wrap; flex: none; }
 .site-header nav a[aria-current]::after { height: 1px; background: #8d3d28; }
 
-/* The source artwork stays intact. Text sits in its open parchment sky. */
+/* Keep the cloud equation and playground visible, with the title beside the art. */
 .hero {
   position: relative;
   isolation: isolate;
   display: block;
   width: 100%;
-  min-height: clamp(280px, 26vw, 370px);
+  min-height: clamp(300px, 26vw, 680px);
   padding: 0;
   overflow: hidden;
   background: #f9eccc;
@@ -63,9 +63,9 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
 .hero-copy {
   position: relative;
   z-index: 1;
-  width: 43%;
+  width: 39%;
   max-width: 700px;
-  margin-left: 53%;
+  margin-left: 57%;
   padding: clamp(55px, 6vw, 95px) 0 45px;
 }
 .hero h1 {
@@ -78,8 +78,8 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
   text-wrap: balance;
 }
 .hero-lede { font-size: 1rem; line-height: 1.6; color: #65513b; margin: 0; }
-.hero-art { position: absolute; inset: 0; z-index: 0; width: 65%; height: 100%; margin: 0; max-width: none; }
-.hero-art img { display: block; width: 100%; height: 100%; margin: 0; object-fit: cover; object-position: center bottom; mix-blend-mode: normal; mask-image: linear-gradient(to right, #000 0, #000 72%, transparent 100%); }
+.hero-art { position: absolute; inset: 0; z-index: 0; width: 65%; height: 100%; margin: 0; max-width: 1700px; }
+.hero-art img { display: block; width: 100%; height: 100%; margin: 0; object-fit: cover; object-position: center 70%; mix-blend-mode: normal; mask-image: linear-gradient(to right, #000 0, #000 88%, transparent 100%); }
 .home-content { position: relative; }
 .resume-banner { margin: 29px 0 0; border-radius: 5px; background: #eee3cbee; border-color: #d2b88b; }
 
@@ -189,15 +189,14 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
 .skip-link { background: #813b25; }
 
 @media (min-width: 1700px) {
-  .hero-copy { margin-left: 53%; padding-top: 95px; }
+  .hero-copy { padding-top: 95px; }
 }
 
 @media (max-width: 1100px) {
   .hero { min-height: 300px; }
-  .hero-copy { margin-left: 53%; width: 43%; padding-top: 65px; padding-bottom: 45px; }
+  .hero-copy { padding-top: 65px; padding-bottom: 45px; }
   .hero h1 { font-size: 3.35rem; }
   .hero-lede { max-width: 390px; font-size: .95rem; }
-  .hero-art img { object-position: 35% bottom; }
   .chapter-card { padding: 24px 20px; }
   .chapter-card h3 { font-size: 1.4rem; }
 }
@@ -206,11 +205,10 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
   .nav-inner { min-height: 76px; }
   .brand { font-size: 1.75rem; }
   .site-header nav { gap: 20px; font-size: .8rem; }
-  .hero { min-height: 280px; }
-  .hero-copy { width: 46%; margin-left: 51%; padding: 57px 12px 30px 0; }
+  .hero { min-height: 220px; }
+  .hero-copy { padding: 57px 12px 30px 0; }
   .hero h1 { font-size: clamp(2rem, 5.5vw, 3rem); }
   .hero-lede { font-size: .85rem; max-width: 270px; }
-  .hero-art img { object-position: center bottom; }
   .section-heading { display: flex; }
   .section-heading h2 { font-size: 2.1rem; }
   .chapter-section { padding-top: 32px; }
@@ -229,10 +227,10 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
   .brand-mark { width: 30px; height: 30px; font-size: .9rem; border-width: 2px; }
   .site-header nav { font-size: .71rem; gap: 16px; }
   .hero { min-height: 260px; background: #f9edcf; }
-  .hero-copy { width: 60%; margin-left: 38%; max-width: none; padding: 25px 8px 0; text-align: center; }
+  .hero-copy { width: 100%; margin-left: 0; max-width: none; padding: 22px 20px 18px; text-align: center; }
   .hero h1 { font-size: clamp(1.85rem, 7vw, 2.4rem); line-height: 1.07; margin: 0 0 10px; letter-spacing: -.05em; }
   .hero-lede { font-size: .75rem; line-height: 1.5; margin: 0 auto; max-width: 190px; }
-  .hero-art { inset: 0; height: 100%; width: 100%; }
+  .hero-art { position: relative; inset: auto; height: 260px; width: 100%; }
   .hero-art img { width: 100%; height: 100%; object-fit: cover; object-position: 60% bottom; mask-image: none; }
   .resume-banner { margin-top: 23px; }
   .resume-banner>.button { margin-left: 0; }
@@ -279,6 +277,7 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
   .brand-mark { width: 26px; height: 26px; font-size: .8rem; }
   .site-header nav { gap: 11px; font-size: .64rem; }
   .hero { min-height: 230px; }
+  .hero-art { height: 230px; }
   .hero-copy { padding-left: 6px; padding-right: 6px; }
   .hero h1 { font-size: 1.85rem; }
   .card-bottom { font-size: .72rem; }
