@@ -32,18 +32,14 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 500; letter-spacing: -.035e
 .brand { font-family: var(--serif); font-size: 2rem; font-weight: 600; letter-spacing: -.055em; gap: 12px; min-width: 0; }
 .brand-name { min-width: 0; line-height: 1.05; text-wrap: balance; }
 .brand-mark {
-  background: #8d3d28;
-  color: #fff5df;
+  display: block;
+  background: none;
   width: 37px;
   height: 37px;
-  border-radius: 50%;
-  border: 3px double #f9e4be;
+  border: 0;
+  border-radius: 0;
   flex: none;
-  font-size: 1.05rem;
-  letter-spacing: -.08em;
-  font-style: italic;
-  padding: 0 2px 1px 0;
-  transform: rotate(-8deg);
+  padding: 0;
 }
 .site-header nav { color: #6c5438; font-size: .88rem; gap: 34px; flex-wrap: wrap; flex: none; }
 .site-header nav a[aria-current]::after { height: 1px; background: #8d3d28; }
@@ -224,7 +220,7 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
 @media (max-width: 560px) {
   .nav-inner { min-height: 73px; gap: 12px; }
   .brand { font-size: 1.55rem; gap: 8px; }
-  .brand-mark { width: 30px; height: 30px; font-size: .9rem; border-width: 2px; }
+  .brand-mark { width: 30px; height: 30px; }
   .site-header nav { font-size: .71rem; gap: 16px; }
   .hero { min-height: 260px; background: #f9edcf; }
   .hero-copy { width: 100%; margin-left: 0; max-width: none; padding: 22px 20px 18px; text-align: center; }
@@ -274,7 +270,7 @@ dialog h2 { font-size: 2.3rem; font-weight: 500; }
 @media (max-width: 360px) {
   .nav-inner { width: calc(100% - 26px); gap: 9px; }
   .brand { font-size: 1.42rem; gap: 6px; }
-  .brand-mark { width: 26px; height: 26px; font-size: .8rem; }
+  .brand-mark { width: 26px; height: 26px; }
   .site-header nav { gap: 11px; font-size: .64rem; }
   .hero { min-height: 230px; }
   .hero-art { height: 230px; }
